@@ -1,13 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DADAR_PLATFORMS, DADAR_FOBS } from './domain/station.ts';
+import { INITIAL_TRAIN_ROSTER, advanceTrainPhysics, ActiveTrainState } from './domain/trainRakeEngine.ts';
 import { DadarStationCanvas } from './components/DadarStationCanvas.tsx';
+import { CoachAlignmentHUD } from './components/CoachAlignmentHUD.tsx';
 import { Train, ShieldAlert, Footprints, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [selectedPlatform, setSelectedPlatform] = useState<number | null>(3);
   const [selectedFobId, setSelectedFobId] = useState<string | null>('middle-fob');
+  const [trains, setTrains] = useState<ActiveTrainState[]>(INITIAL_TRAIN_ROSTER);
+
+  // Train Physics Simulation Loop (Advances every 200ms)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTrains((prevTrains) => prevTrains.map((t) => advanceTrainPhysics(t, 0.2)));
+    }, 200);
+
+    return () => clearInterval(interval);
+  }, []);
 
   const activePlatform = DADAR_PLATFORMS.find((p) => p.number === selectedPlatform);
+  const activeTrain = trains.find((t) => t.platformNumber === selectedPlatform);
 
   return (
     <div className="flex flex-col h-screen w-screen bg-gray-950 text-gray-100 font-sans">
@@ -24,14 +37,14 @@ export const App: React.FC = () => {
                 DADAR JUNCTION
               </span>
             </h1>
-            <p className="text-[11px] text-gray-400">14 Platforms · Live Spatial Commuter Pulse</p>
+            <p className="text-[11px] text-gray-400">14 Platforms · Dynamic Suburban Rake Tracking</p>
           </div>
         </div>
 
         <div className="flex items-center space-x-3">
           <div className="hidden sm:flex items-center space-x-2 text-xs bg-gray-950/80 px-3 py-1.5 rounded-lg border border-gray-800">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span className="text-gray-300">Station Concourse Live</span>
+            <span className="text-gray-300">Live EMU Telemetry Active</span>
           </div>
           <button 
             type="button"
@@ -48,6 +61,7 @@ export const App: React.FC = () => {
         {/* 3D WebGL Canvas Viewport */}
         <section aria-label="3D Station Visualizer" className="flex-1 relative h-1/2 md:h-full">
           <DadarStationCanvas
+            trains={trains}
             selectedPlatform={selectedPlatform}
             onSelectPlatform={setSelectedPlatform}
             selectedFobId={selectedFobId}
@@ -58,42 +72,25 @@ export const App: React.FC = () => {
         {/* Live Commuter Side Panel */}
         <aside 
           aria-label="Commuter Telemetry & Bridge Pulse"
-          className="w-full md:w-84 border-t md:border-t-0 md:border-l border-gray-800 bg-gray-900/80 p-4 overflow-y-auto shrink-0 flex flex-col space-y-4"
+          className="w-full md:w-96 border-t md:border-t-0 md:border-l border-gray-800 bg-gray-900/80 p-4 overflow-y-auto shrink-0 flex flex-col space-y-4"
         >
+          {/* Active Coach Alignment HUD */}
+          <CoachAlignmentHUD train={activeTrain} platformNumber={selectedPlatform ?? 3} />
+
           {/* Selected Platform Inspection Card */}
           {activePlatform ? (
-            <div className="p-3.5 rounded-xl bg-gray-950/90 border border-blue-500/40 shadow-lg">
+            <div className="p-3.5 rounded-xl bg-gray-950/90 border border-gray-800 shadow-lg">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">
-                  Selected Platform
+                  Platform Telemetry
                 </span>
                 <span className="text-xs px-2 py-0.5 rounded font-mono font-semibold bg-blue-950 text-blue-300 border border-blue-800">
                   {activePlatform.line} LINE
                 </span>
               </div>
               <div className="flex items-baseline justify-between mb-2">
-                <span className="text-2xl font-black text-white">Platform {activePlatform.number}</span>
+                <span className="text-xl font-black text-white">Platform {activePlatform.number}</span>
                 <span className="text-xs text-gray-400">{activePlatform.side} Concourses</span>
-              </div>
-
-              {/* Status Banner */}
-              <div className="flex items-center space-x-2 text-xs p-2 rounded-lg bg-gray-900 border border-gray-800 mb-3">
-                {activePlatform.currentStatus === 'TRAIN_ARRIVING' ? (
-                  <>
-                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
-                    <span className="text-amber-300 font-semibold">Suburban Local Entering</span>
-                  </>
-                ) : activePlatform.currentStatus === 'TRAIN_HALTED' ? (
-                  <>
-                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                    <span className="text-emerald-300 font-semibold">Train Halted (Boarding)</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="w-2 h-2 rounded-full bg-gray-500"></span>
-                    <span className="text-gray-400">Platform Clear (Next in 3m)</span>
-                  </>
-                )}
               </div>
 
               {/* Verified Platform Amenities */}

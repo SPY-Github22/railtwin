@@ -2,11 +2,13 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { DADAR_PLATFORMS, DADAR_FOBS, CongestionLevel } from '../domain/station.ts';
+import { ActiveTrainState } from '../domain/trainRakeEngine.ts';
 import { Eye, Layers, Compass, ZoomIn } from 'lucide-react';
 
 export type CameraViewPreset = 'OVERVIEW' | 'WESTERN' | 'CENTRAL' | 'BRIDGES';
 
 interface DadarStationCanvasProps {
+  trains?: ActiveTrainState[];
   selectedPlatform?: number | null;
   onSelectPlatform?: (platformNumber: number) => void;
   selectedFobId?: string | null;
@@ -14,6 +16,7 @@ interface DadarStationCanvasProps {
 }
 
 export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
+  trains = [],
   selectedPlatform,
   onSelectPlatform,
   selectedFobId,
@@ -30,6 +33,7 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const platformMeshesRef = useRef<Map<number, THREE.Mesh>>(new Map());
   const fobMeshesRef = useRef<Map<string, THREE.Mesh>>(new Map());
+  const trainGroupsRef = useRef<Map<string, THREE.Group>>(new Map());
 
   // Camera preset handler with smooth lerp
   const applyCameraPreset = useCallback((preset: CameraViewPreset) => {
@@ -116,9 +120,6 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
     const platformWidth = 3.2;
     const platformHeight = 1.0;
 
-    // Mapping 14 Platforms along the X axis
-    // Western (1-7): X from -28 to -4
-    // Central (8-14): X from +4 to +28
     const getPlatformX = (pfNum: number): number => {
       if (pfNum <= 7) {
         return -28 + (pfNum - 1) * 3.8;
@@ -178,7 +179,7 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
     });
 
     // 7. Elevated Foot Overbridges (North, Middle, South)
-    const fobElev = 5.2; // Elevation above ground
+    const fobElev = 5.2;
     const fobZPositions: Record<string, number> = {
       'north-fob': -22,
       'middle-fob': 0,
@@ -188,18 +189,18 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
     const getFobColor = (congestion: CongestionLevel): string => {
       switch (congestion) {
         case 'FREE_FLOW':
-          return '#10b981'; // Green
+          return '#10b981';
         case 'MODERATE':
-          return '#f59e0b'; // Amber
+          return '#f59e0b';
         case 'CHOKED':
-          return '#ef4444'; // Red
+          return '#ef4444';
       }
     };
 
     DADAR_FOBS.forEach((fob) => {
       const fobGroup = new THREE.Group();
       const zPos = fobZPositions[fob.id] ?? 0;
-      const spanX = 64; // Spanning across Western and Central
+      const spanX = 64;
 
       // Bridge Deck
       const bridgeGeo = new THREE.BoxGeometry(spanX, 0.6, fob.widthMeters * 0.5);
@@ -232,7 +233,6 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
       const stairMat = new THREE.MeshStandardMaterial({ color: '#64748b' });
       fob.connectedPlatforms.forEach((pfNum) => {
         if (pfNum % 2 === 0) {
-          // Add staircase down to platform
           const stair = new THREE.Mesh(stairGeo, stairMat);
           const px = getPlatformX(pfNum);
           stair.rotation.x = Math.PI / 6;
@@ -244,7 +244,7 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
       scene.add(fobGroup);
     });
 
-    // 8. Raycasting for Commuter Interaction (hover & selection)
+    // 8. Raycasting for Commuter Interaction
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
@@ -344,8 +344,81 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
       }
       platformMeshesRef.current.clear();
       fobMeshesRef.current.clear();
+      trainGroupsRef.current.clear();
     };
   }, [applyCameraPreset, onSelectFob, onSelectPlatform]);
+
+  // Synchronize 3D train meshes with active train roster telemetry
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    const getPlatformX = (pfNum: number): number => {
+      if (pfNum <= 7) {
+        return -28 + (pfNum - 1) * 3.8;
+      } else {
+        return 5 + (pfNum - 8) * 3.8;
+      }
+    };
+
+    trains.forEach((train) => {
+      let trainGroup = trainGroupsRef.current.get(train.id);
+
+      if (!trainGroup) {
+        // Construct new 3D Suburban Train Rake
+        const newGroup = new THREE.Group();
+        const coachLength = 4.4;
+        const coachSpacing = 4.6;
+        const totalCoaches = train.coaches.length;
+        const startZ = -((totalCoaches * coachSpacing) / 2);
+
+        train.coaches.forEach((coach, idx) => {
+          const coachGroup = new THREE.Group();
+          const localZ = startZ + idx * coachSpacing;
+
+          // Main Coach Body
+          const bodyGeo = new THREE.BoxGeometry(1.6, 1.4, coachLength);
+          const bodyMat = new THREE.MeshStandardMaterial({
+            color: train.isAC ? '#0284c7' : '#1e293b',
+            metalness: 0.4,
+            roughness: 0.3,
+          });
+          const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+          bodyMesh.castShadow = true;
+          bodyMesh.receiveShadow = true;
+          coachGroup.add(bodyMesh);
+
+          // Coach Class Livery Stripe
+          const stripeGeo = new THREE.BoxGeometry(1.62, 0.35, coachLength);
+          const stripeMat = new THREE.MeshBasicMaterial({ color: coach.colorHex });
+          const stripeMesh = new THREE.Mesh(stripeGeo, stripeMat);
+          stripeMesh.position.y = 0.15;
+          coachGroup.add(stripeMesh);
+
+          // Windows
+          const windowGeo = new THREE.BoxGeometry(1.64, 0.4, 0.8);
+          const windowMat = new THREE.MeshBasicMaterial({ color: '#38bdf8' });
+          [-1.2, 0, 1.2].forEach((wz) => {
+            const win = new THREE.Mesh(windowGeo, windowMat);
+            win.position.set(0, 0.25, wz);
+            coachGroup.add(win);
+          });
+
+          coachGroup.position.set(0, 0, localZ);
+          newGroup.add(coachGroup);
+        });
+
+        scene.add(newGroup);
+        trainGroupsRef.current.set(train.id, newGroup);
+        trainGroup = newGroup;
+      }
+
+      // Update position and visibility based on train telemetry
+      const trackX = getPlatformX(train.platformNumber) + 2.2;
+      trainGroup.position.set(trackX, 0.9, train.positionZ);
+      trainGroup.visible = train.lifecycle !== 'CLEAR';
+    });
+  }, [trains]);
 
   // Synchronize selection highlight for platforms and FOBs
   useEffect(() => {
@@ -441,16 +514,20 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
       {/* Spatial Legend */}
       <div className="absolute bottom-4 right-4 z-10 hidden sm:flex items-center space-x-3 px-3 py-1.5 rounded-lg bg-gray-900/80 border border-gray-800 text-[11px] text-gray-300 shadow-lg backdrop-blur">
         <div className="flex items-center space-x-1">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-          <span>Free Flow</span>
-        </div>
-        <div className="flex items-center space-x-1">
-          <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
-          <span>Moderate</span>
+          <span className="w-2.5 h-2.5 rounded-full bg-pink-500"></span>
+          <span>Ladies</span>
         </div>
         <div className="flex items-center space-x-1">
           <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span>
-          <span>Choked Bridge</span>
+          <span>1st Class</span>
+        </div>
+        <div className="flex items-center space-x-1">
+          <span className="w-2.5 h-2.5 rounded-full bg-purple-500"></span>
+          <span>General</span>
+        </div>
+        <div className="flex items-center space-x-1">
+          <span className="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
+          <span>AC Local</span>
         </div>
       </div>
     </div>
