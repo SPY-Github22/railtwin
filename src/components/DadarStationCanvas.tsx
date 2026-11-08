@@ -4,7 +4,18 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { DADAR_PLATFORMS, DADAR_FOBS, CongestionLevel } from '../domain/station.ts';
 import { ActiveTrainState } from '../domain/trainRakeEngine.ts';
 import { DetailedRoute } from '../domain/interchangeRouter.ts';
-import { Layers, Compass, ZoomIn, Plus, Minus, RotateCcw } from 'lucide-react';
+import {
+  Layers,
+  Compass,
+  ZoomIn,
+  Plus,
+  Minus,
+  RotateCcw,
+  ArrowUp,
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+} from 'lucide-react';
 
 export type CameraViewPreset = 'OVERVIEW' | 'WESTERN' | 'CENTRAL' | 'BRIDGES';
 
@@ -39,7 +50,7 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
   const trainGroupsRef = useRef<Map<string, THREE.Group>>(new Map());
   const routeGroupRef = useRef<THREE.Group | null>(null);
 
-  // Camera preset handler with smooth camera target
+  // Camera preset handler
   const applyCameraPreset = useCallback((preset: CameraViewPreset) => {
     setActiveView(preset);
     if (!cameraRef.current || !controlsRef.current) return;
@@ -53,11 +64,11 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
         controls.target.set(0, 0, 0);
         break;
       case 'WESTERN':
-        camera.position.set(-18, 30, 36);
+        camera.position.set(-18, 28, 36);
         controls.target.set(-18, 0, 0);
         break;
       case 'CENTRAL':
-        camera.position.set(18, 30, 36);
+        camera.position.set(18, 28, 36);
         controls.target.set(18, 0, 0);
         break;
       case 'BRIDGES':
@@ -68,7 +79,20 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
     controls.update();
   }, []);
 
-  // Zoom helpers
+  // Directional Pan Handlers
+  const handlePan = (dx: number, dz: number) => {
+    if (!cameraRef.current || !controlsRef.current) return;
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+
+    camera.position.x += dx;
+    camera.position.z += dz;
+    controls.target.x += dx;
+    controls.target.z += dz;
+    controls.update();
+  };
+
+  // Zoom Handlers
   const handleZoom = (delta: number) => {
     if (!cameraRef.current || !controlsRef.current) return;
     const camera = cameraRef.current;
@@ -85,40 +109,55 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
     // 1. Scene setup: Clean White / Daylight Architectural Palette
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    scene.background = new THREE.Color('#f8fafc'); // Clean off-white daylight
-    scene.fog = new THREE.FogExp2('#f8fafc', 0.004);
+    scene.background = new THREE.Color('#f8fafc');
+    scene.fog = new THREE.FogExp2('#f8fafc', 0.0035);
 
-    // 2. Camera setup
-    const width = mount.clientWidth;
-    const height = mount.clientHeight;
-    const camera = new THREE.PerspectiveCamera(42, width / height, 0.5, 350);
+    // 2. Safe Dimension Detection (Prevents NaN Aspect Ratio)
+    const initialWidth = mount.clientWidth > 0 ? mount.clientWidth : (window.innerWidth || 800);
+    const initialHeight = mount.clientHeight > 0 ? mount.clientHeight : (window.innerHeight || 600);
+
+    const camera = new THREE.PerspectiveCamera(42, initialWidth / initialHeight, 0.5, 350);
     camera.position.set(0, 52, 68);
     cameraRef.current = camera;
 
     // 3. Renderer setup
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-    renderer.setSize(width, height);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+    renderer.setSize(initialWidth, initialHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.domElement.style.touchAction = 'none'; // Critical for mobile touch navigation
     rendererRef.current = renderer;
     mount.appendChild(renderer.domElement);
 
-    // 4. OrbitControls: Full Screen-Space Free Panning & Orbit
+    // 4. OrbitControls: Guaranteed Multi-Modal Movement (Orbit + Pan + Dolly)
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.dampingFactor = 0.06;
+    controls.dampingFactor = 0.08;
+    controls.enableRotate = true;
+    controls.enableZoom = true;
     controls.enablePan = true;
-    controls.screenSpacePanning = true; // Enables moving around freely in 3D
-    controls.panSpeed = 1.2;
-    controls.maxPolarAngle = Math.PI / 2.08; // Clamp right above horizon
-    controls.minDistance = 8;
-    controls.maxDistance = 140;
+    controls.screenSpacePanning = true;
+    controls.panSpeed = 1.4;
+    controls.rotateSpeed = 0.8;
+    controls.maxPolarAngle = Math.PI / 2.05;
+    controls.minDistance = 6;
+    controls.maxDistance = 150;
     controls.target.set(0, 0, 0);
+
+    controls.mouseButtons = {
+      LEFT: THREE.MOUSE.ROTATE,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.PAN,
+    };
+    controls.touches = {
+      ONE: THREE.TOUCH.ROTATE,
+      TWO: THREE.TOUCH.DOLLY_PAN,
+    };
     controlsRef.current = controls;
 
     // 5. Daylight Lighting & Soft Sunlight Shadows
-    const ambientLight = new THREE.AmbientLight('#ffffff', 1.05);
+    const ambientLight = new THREE.AmbientLight('#ffffff', 1.1);
     scene.add(ambientLight);
 
     const sunLight = new THREE.DirectionalLight('#fffbeb', 1.6);
@@ -126,22 +165,15 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
     sunLight.castShadow = true;
     sunLight.shadow.mapSize.width = 2048;
     sunLight.shadow.mapSize.height = 2048;
-    sunLight.shadow.camera.near = 10;
-    sunLight.shadow.camera.far = 180;
-    sunLight.shadow.camera.left = -50;
-    sunLight.shadow.camera.right = 50;
-    sunLight.shadow.camera.top = 50;
-    sunLight.shadow.camera.bottom = -50;
     sunLight.shadow.bias = -0.0005;
     scene.add(sunLight);
 
-    // Secondary fill light for soft contrast
     const fillLight = new THREE.DirectionalLight('#e0f2fe', 0.6);
     fillLight.position.set(-30, 40, -30);
     scene.add(fillLight);
 
     // 6. Ground Plaza & Urban Canvas
-    const groundGeo = new THREE.PlaneGeometry(180, 140);
+    const groundGeo = new THREE.PlaneGeometry(200, 160);
     const groundMat = new THREE.MeshStandardMaterial({
       color: '#edf2f7',
       roughness: 0.9,
@@ -153,27 +185,20 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
     groundMesh.receiveShadow = true;
     scene.add(groundMesh);
 
-    // Subtle modern architectural grid
-    const architecturalGrid = new THREE.GridHelper(180, 90, '#cbd5e1', '#e2e8f0');
+    const architecturalGrid = new THREE.GridHelper(200, 100, '#cbd5e1', '#e2e8f0');
     architecturalGrid.position.y = 0.01;
     scene.add(architecturalGrid);
 
     // 7. Station Concourse Buildings (West & East Facades)
-    // West Concourse (Dadar West / Senapati Bapat Marg)
-    const westBldgGeo = new THREE.BoxGeometry(8, 9, 75);
-    const bldgMat = new THREE.MeshStandardMaterial({
-      color: '#ffffff',
-      roughness: 0.3,
-      metalness: 0.1,
-    });
+    const westBldgGeo = new THREE.BoxGeometry(8, 9, 80);
+    const bldgMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.3, metalness: 0.1 });
     const westBldg = new THREE.Mesh(westBldgGeo, bldgMat);
     westBldg.position.set(-37, 4.5, 0);
     westBldg.castShadow = true;
     westBldg.receiveShadow = true;
     scene.add(westBldg);
 
-    // East Concourse (Dadar East / Lakhamsi Nappu Road)
-    const eastBldgGeo = new THREE.BoxGeometry(8, 9, 75);
+    const eastBldgGeo = new THREE.BoxGeometry(8, 9, 80);
     const eastBldg = new THREE.Mesh(eastBldgGeo, bldgMat);
     eastBldg.position.set(37, 4.5, 0);
     eastBldg.castShadow = true;
@@ -278,18 +303,18 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
     const getFobColor = (congestion: CongestionLevel): string => {
       switch (congestion) {
         case 'FREE_FLOW':
-          return '#10b981'; // Modern Emerald
+          return '#10b981';
         case 'MODERATE':
-          return '#f59e0b'; // Amber
+          return '#f59e0b';
         case 'CHOKED':
-          return '#ef4444'; // Red
+          return '#ef4444';
       }
     };
 
     DADAR_FOBS.forEach((fob) => {
       const fobGroup = new THREE.Group();
       const zPos = fobZPositions[fob.id] ?? 0;
-      const spanX = 72; // Spanning Western concourse to Central concourse
+      const spanX = 72;
 
       // Modern Bridge Deck
       const bridgeGeo = new THREE.BoxGeometry(spanX, 0.6, fob.widthMeters * 0.5);
@@ -334,12 +359,12 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
       scene.add(fobGroup);
     });
 
-    // 10. Raycasting for Interaction
+    // 10. Raycasting for Commuter Interaction
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
     const handlePointerMove = (event: MouseEvent) => {
-      const rect = mount.getBoundingClientRect();
+      const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
@@ -352,21 +377,18 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
           const data = hit.object.userData;
           if (data.type === 'PLATFORM') {
             setHoveredEntity(`Platform ${data.number} (${data.line === 'WESTERN' ? 'Western' : 'Central'})`);
-            mount.style.cursor = 'pointer';
             return;
           } else if (data.type === 'FOB') {
             setHoveredEntity(data.name);
-            mount.style.cursor = 'pointer';
             return;
           }
         }
       }
       setHoveredEntity(null);
-      mount.style.cursor = 'default';
     };
 
     const handleClick = (event: MouseEvent) => {
-      const rect = mount.getBoundingClientRect();
+      const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
@@ -386,19 +408,22 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
       }
     };
 
-    mount.addEventListener('mousemove', handlePointerMove);
-    mount.addEventListener('click', handleClick);
+    renderer.domElement.addEventListener('mousemove', handlePointerMove);
+    renderer.domElement.addEventListener('click', handleClick);
 
-    // 11. Resize handler
-    const handleResize = () => {
-      if (!mount || !renderer || !camera) return;
-      const w = mount.clientWidth;
-      const h = mount.clientHeight;
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
-    };
-    window.addEventListener('resize', handleResize);
+    // 11. ResizeObserver: Dynamic & Foolproof Window Sizing
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const w = entry.contentRect.width;
+        const h = entry.contentRect.height;
+        if (w > 0 && h > 0) {
+          camera.aspect = w / h;
+          camera.updateProjectionMatrix();
+          renderer.setSize(w, h);
+        }
+      }
+    });
+    resizeObserver.observe(mount);
 
     // 12. Animation Loop
     let animationFrameId: number;
@@ -412,9 +437,9 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
     // 13. Complete Cleanup on Unmount
     return () => {
       cancelAnimationFrame(animationFrameId);
-      window.removeEventListener('resize', handleResize);
-      mount.removeEventListener('mousemove', handlePointerMove);
-      mount.removeEventListener('click', handleClick);
+      resizeObserver.disconnect();
+      renderer.domElement.removeEventListener('mousemove', handlePointerMove);
+      renderer.domElement.removeEventListener('click', handleClick);
 
       scene.traverse((obj) => {
         if (obj instanceof THREE.Mesh) {
@@ -537,7 +562,6 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
 
     const routeGroup = new THREE.Group();
 
-    // 1. Build smooth 3D Catmull-Rom spline through waypoints
     const points = activeRoute.waypoints3D.map(
       (w) => new THREE.Vector3(w.x, w.y + 0.35, w.z)
     );
@@ -555,7 +579,6 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
     tubeMesh.castShadow = true;
     routeGroup.add(tubeMesh);
 
-    // 2. Start Beacon Pin on Source Platform
     const startW = activeRoute.waypoints3D[0];
     const pinGeo = new THREE.CylinderGeometry(0.5, 0.1, 2.0, 16);
     const startPinMat = new THREE.MeshStandardMaterial({
@@ -567,7 +590,6 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
     startPin.position.set(startW.x, startW.y + 1.2, startW.z);
     routeGroup.add(startPin);
 
-    // 3. Finish Beacon Pin on Target Platform
     const endW = activeRoute.waypoints3D[activeRoute.waypoints3D.length - 1];
     const endPinMat = new THREE.MeshStandardMaterial({
       color: '#8b5cf6',
@@ -582,8 +604,16 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
     routeGroupRef.current = routeGroup;
   }, [activeRoute]);
 
-  // Synchronize selection highlight and smooth camera glide
+  // Synchronize selection highlight & Smooth Camera Glide to Selected Platform
   useEffect(() => {
+    const getPlatformX = (pfNum: number): number => {
+      if (pfNum <= 7) {
+        return -28 + (pfNum - 1) * 3.8;
+      } else {
+        return 5 + (pfNum - 8) * 3.8;
+      }
+    };
+
     platformMeshesRef.current.forEach((mesh, pfNum) => {
       const mat = mesh.material as THREE.MeshStandardMaterial;
       if (selectedPlatform === pfNum) {
@@ -601,15 +631,26 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
         mat.emissiveIntensity = 0.1;
       }
     });
+
+    // Smooth Fly-To Focus when platform is selected
+    if (selectedPlatform && cameraRef.current && controlsRef.current) {
+      const targetX = getPlatformX(selectedPlatform);
+      const controls = controlsRef.current;
+      const camera = cameraRef.current;
+
+      controls.target.set(targetX, 0, 0);
+      camera.position.set(targetX, 28, 36);
+      controls.update();
+    }
   }, [selectedPlatform, selectedFobId]);
 
   return (
-    <div className="relative w-full h-full flex flex-col select-none overflow-hidden bg-slate-100">
-      {/* 3D WebGL Mount */}
+    <div className="relative w-full h-full select-none overflow-hidden bg-slate-100">
+      {/* 3D WebGL Canvas Mount */}
       <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
 
       {/* Floating Modern Camera & Navigation Pill Toolbar */}
-      <div className="absolute top-4 left-4 z-10 flex items-center space-x-1.5 bg-white/95 px-2 py-1.5 rounded-2xl border border-slate-200 shadow-lg shadow-slate-200/50 backdrop-blur">
+      <div className="absolute top-4 left-4 z-10 flex items-center space-x-1.5 bg-white/95 px-2.5 py-1.5 rounded-2xl border border-slate-200/90 shadow-lg shadow-slate-200/50 backdrop-blur">
         <button
           type="button"
           onClick={() => applyCameraPreset('OVERVIEW')}
@@ -620,7 +661,7 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
           }`}
         >
           <Layers className="w-3.5 h-3.5" />
-          <span>Station</span>
+          <span>Full Station</span>
         </button>
         <button
           type="button"
@@ -658,37 +699,88 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
           <ZoomIn className="w-3.5 h-3.5 text-amber-500" />
           <span>Bridges</span>
         </button>
+      </div>
 
-        <div className="h-4 w-[1px] bg-slate-200 mx-1"></div>
+      {/* Floating On-Screen Navigation D-Pad & Zoom Controls (Guarantees Movement) */}
+      <div className="absolute bottom-24 right-4 sm:bottom-6 sm:left-4 sm:right-auto z-10 flex items-center space-x-2 bg-white/95 p-2 rounded-2xl border border-slate-200/90 shadow-xl shadow-slate-200/50 backdrop-blur">
+        {/* Directional Pan Cross */}
+        <div className="grid grid-cols-3 gap-1">
+          <div></div>
+          <button
+            type="button"
+            onClick={() => handlePan(0, -6)}
+            title="Pan North"
+            aria-label="Pan North"
+            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition active:scale-90"
+          >
+            <ArrowUp className="w-3.5 h-3.5" />
+          </button>
+          <div></div>
 
-        {/* Free Zoom & Reset Buttons */}
-        <button
-          type="button"
-          onClick={() => handleZoom(8)}
-          title="Zoom In"
-          aria-label="Zoom In"
-          className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition active:scale-95"
-        >
-          <Plus className="w-4 h-4" />
-        </button>
-        <button
-          type="button"
-          onClick={() => handleZoom(-8)}
-          title="Zoom Out"
-          aria-label="Zoom Out"
-          className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition active:scale-95"
-        >
-          <Minus className="w-4 h-4" />
-        </button>
-        <button
-          type="button"
-          onClick={() => applyCameraPreset('OVERVIEW')}
-          title="Recenter Camera"
-          aria-label="Recenter Camera"
-          className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition active:scale-95"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-        </button>
+          <button
+            type="button"
+            onClick={() => handlePan(-6, 0)}
+            title="Pan West"
+            aria-label="Pan West"
+            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition active:scale-90"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => applyCameraPreset('OVERVIEW')}
+            title="Recenter"
+            aria-label="Recenter"
+            className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition active:scale-90"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => handlePan(6, 0)}
+            title="Pan East"
+            aria-label="Pan East"
+            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition active:scale-90"
+          >
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+
+          <div></div>
+          <button
+            type="button"
+            onClick={() => handlePan(0, 6)}
+            title="Pan South"
+            aria-label="Pan South"
+            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition active:scale-90"
+          >
+            <ArrowDown className="w-3.5 h-3.5" />
+          </button>
+          <div></div>
+        </div>
+
+        <div className="h-10 w-[1px] bg-slate-200 mx-1"></div>
+
+        {/* Zoom In / Out Buttons */}
+        <div className="flex flex-col space-y-1">
+          <button
+            type="button"
+            onClick={() => handleZoom(8)}
+            title="Zoom In"
+            aria-label="Zoom In"
+            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition active:scale-90"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => handleZoom(-8)}
+            title="Zoom Out"
+            aria-label="Zoom Out"
+            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition active:scale-90"
+          >
+            <Minus className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* Floating Hover Badge */}
@@ -699,26 +791,6 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
           <span className="text-[10px] text-slate-400 font-normal">· Click to focus</span>
         </div>
       )}
-
-      {/* Clean Modern Spatial Legend */}
-      <div className="absolute bottom-4 right-4 z-10 hidden sm:flex items-center space-x-3 px-3 py-1.5 rounded-xl bg-white/95 border border-slate-200 text-[11px] font-semibold text-slate-600 shadow-md backdrop-blur">
-        <div className="flex items-center space-x-1.5">
-          <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-          <span>Clear Bridge</span>
-        </div>
-        <div className="flex items-center space-x-1.5">
-          <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-          <span>Moderate</span>
-        </div>
-        <div className="flex items-center space-x-1.5">
-          <span className="w-2 h-2 rounded-full bg-red-500"></span>
-          <span>Choked</span>
-        </div>
-        <div className="flex items-center space-x-1.5 border-l border-slate-200 pl-2">
-          <span className="w-2 h-2 rounded-full bg-blue-600"></span>
-          <span>3D Route</span>
-        </div>
-      </div>
     </div>
   );
 };
