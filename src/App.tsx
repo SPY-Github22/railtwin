@@ -2,12 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { DADAR_PLATFORMS, DADAR_FOBS } from './domain/station.ts';
 import { INITIAL_TRAIN_ROSTER, advanceTrainPhysics, ActiveTrainState } from './domain/trainRakeEngine.ts';
 import { calculateDetailedInterchangePath } from './domain/interchangeRouter.ts';
+import { detectPlatformFlipEvents, PlatformFlipEvent } from './domain/stationScheduleEngine.ts';
 import { DadarStationCanvas } from './components/DadarStationCanvas.tsx';
 import { CoachAlignmentHUD } from './components/CoachAlignmentHUD.tsx';
 import { InterchangeRouter } from './components/InterchangeRouter.tsx';
-import { Train, ShieldAlert, Footprints, AlertTriangle, CheckCircle2, Navigation, Layers } from 'lucide-react';
+import { PlatformFlipAlert } from './components/PlatformFlipAlert.tsx';
+import { SuburbanTimetableHUD } from './components/SuburbanTimetableHUD.tsx';
+import { Train, ShieldAlert, Footprints, AlertTriangle, CheckCircle2, Navigation, Layers, CalendarClock } from 'lucide-react';
 
-export type CommuterTab = 'COACH' | 'INTERCHANGE' | 'BRIDGES';
+export type CommuterTab = 'COACH' | 'INTERCHANGE' | 'TIMETABLE' | 'BRIDGES';
 
 export const App: React.FC = () => {
   const [selectedPlatform, setSelectedPlatform] = useState<number | null>(3);
@@ -18,6 +21,12 @@ export const App: React.FC = () => {
   const [sourcePf, setSourcePf] = useState<number>(3); // Western Fast
   const [targetPf, setTargetPf] = useState<number>(10); // Central Fast
   const [activeTab, setActiveTab] = useState<CommuterTab>('COACH');
+
+  // Platform Flip active alert
+  const [flipAlert, setFlipAlert] = useState<PlatformFlipEvent | null>(() => {
+    const detected = detectPlatformFlipEvents();
+    return detected.length > 0 ? detected[0] : null;
+  });
 
   // Train Physics Simulation Loop (Advances every 200ms)
   useEffect(() => {
@@ -34,14 +43,17 @@ export const App: React.FC = () => {
 
   const handleSelectPlatformFrom3D = (pfNum: number) => {
     setSelectedPlatform(pfNum);
-    // If on interchange tab, update target or source intelligently
     if (activeTab === 'INTERCHANGE') {
-      if (sourcePf === pfNum) {
-        // already source
-      } else {
+      if (sourcePf !== pfNum) {
         setTargetPf(pfNum);
       }
     }
+  };
+
+  const handleRerouteAfterPlatformFlip = (newPlatform: number) => {
+    setTargetPf(newPlatform);
+    setSelectedPlatform(newPlatform);
+    setActiveTab('INTERCHANGE');
   };
 
   return (
@@ -59,7 +71,7 @@ export const App: React.FC = () => {
                 DADAR JUNCTION
               </span>
             </h1>
-            <p className="text-[11px] text-gray-400">14 Platforms · 3D Interchange & Coach Pulse</p>
+            <p className="text-[11px] text-gray-400">14 Platforms · Platform Flip Radar & Spatial Telemetry</p>
           </div>
         </div>
 
@@ -82,6 +94,17 @@ export const App: React.FC = () => {
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
         {/* 3D WebGL Canvas Viewport */}
         <section aria-label="3D Station Visualizer" className="flex-1 relative h-1/2 md:h-full">
+          {/* Platform Flip Emergency Floating Alert */}
+          {flipAlert && (
+            <div className="absolute top-16 left-4 right-4 sm:left-6 sm:right-auto sm:max-w-md z-20">
+              <PlatformFlipAlert
+                event={flipAlert}
+                onRerouteToNewPlatform={handleRerouteAfterPlatformFlip}
+                onDismiss={() => setFlipAlert(null)}
+              />
+            </div>
+          )}
+
           <DadarStationCanvas
             trains={trains}
             selectedPlatform={selectedPlatform}
@@ -97,43 +120,55 @@ export const App: React.FC = () => {
           aria-label="Commuter Telemetry & Bridge Pulse"
           className="w-full md:w-96 border-t md:border-t-0 md:border-l border-gray-800 bg-gray-900/80 p-3.5 overflow-y-auto shrink-0 flex flex-col space-y-3.5"
         >
-          {/* Commuter Mode Switcher Tabs */}
-          <div className="grid grid-cols-3 gap-1 bg-gray-950 p-1 rounded-xl border border-gray-800 shrink-0">
+          {/* Commuter Mode Switcher Tabs (4 Tabs) */}
+          <div className="grid grid-cols-4 gap-1 bg-gray-950 p-1 rounded-xl border border-gray-800 shrink-0">
             <button
               type="button"
               onClick={() => setActiveTab('COACH')}
-              className={`flex items-center justify-center space-x-1.5 py-1.5 px-2 rounded-lg text-xs font-bold transition ${
+              className={`flex items-center justify-center space-x-1 py-1.5 px-1.5 rounded-lg text-[11px] font-bold transition ${
                 activeTab === 'COACH'
                   ? 'bg-blue-600 text-white shadow'
                   : 'text-gray-400 hover:text-gray-200'
               }`}
             >
               <Train className="w-3.5 h-3.5" />
-              <span>Coach Locator</span>
+              <span>Coach</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('INTERCHANGE')}
-              className={`flex items-center justify-center space-x-1.5 py-1.5 px-2 rounded-lg text-xs font-bold transition ${
+              className={`flex items-center justify-center space-x-1 py-1.5 px-1.5 rounded-lg text-[11px] font-bold transition ${
                 activeTab === 'INTERCHANGE'
                   ? 'bg-blue-600 text-white shadow'
                   : 'text-gray-400 hover:text-gray-200'
               }`}
             >
               <Navigation className="w-3.5 h-3.5" />
-              <span>Interchange</span>
+              <span>Route</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('TIMETABLE')}
+              className={`flex items-center justify-center space-x-1 py-1.5 px-1.5 rounded-lg text-[11px] font-bold transition ${
+                activeTab === 'TIMETABLE'
+                  ? 'bg-blue-600 text-white shadow'
+                  : 'text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              <CalendarClock className="w-3.5 h-3.5" />
+              <span>Schedule</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('BRIDGES')}
-              className={`flex items-center justify-center space-x-1.5 py-1.5 px-2 rounded-lg text-xs font-bold transition ${
+              className={`flex items-center justify-center space-x-1 py-1.5 px-1.5 rounded-lg text-[11px] font-bold transition ${
                 activeTab === 'BRIDGES'
                   ? 'bg-blue-600 text-white shadow'
                   : 'text-gray-400 hover:text-gray-200'
               }`}
             >
               <Layers className="w-3.5 h-3.5" />
-              <span>Bridge Pulse</span>
+              <span>Bridges</span>
             </button>
           </div>
 
@@ -195,7 +230,14 @@ export const App: React.FC = () => {
             </div>
           )}
 
-          {/* TAB 3: OVERBRIDGE CONGESTION RADAR */}
+          {/* TAB 3: SUBURBAN TIMETABLE & FAST VS SLOW OPTIMIZER */}
+          {activeTab === 'TIMETABLE' && (
+            <div className="flex flex-col space-y-3">
+              <SuburbanTimetableHUD onSelectPlatform={handleSelectPlatformFrom3D} />
+            </div>
+          )}
+
+          {/* TAB 4: OVERBRIDGE CONGESTION RADAR */}
           {activeTab === 'BRIDGES' && (
             <div className="flex flex-col space-y-2.5">
               <div className="flex items-center justify-between mb-1">
