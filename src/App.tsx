@@ -1,14 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { DADAR_PLATFORMS, DADAR_FOBS } from './domain/station.ts';
 import { INITIAL_TRAIN_ROSTER, advanceTrainPhysics, ActiveTrainState } from './domain/trainRakeEngine.ts';
+import { calculateDetailedInterchangePath } from './domain/interchangeRouter.ts';
 import { DadarStationCanvas } from './components/DadarStationCanvas.tsx';
 import { CoachAlignmentHUD } from './components/CoachAlignmentHUD.tsx';
-import { Train, ShieldAlert, Footprints, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { InterchangeRouter } from './components/InterchangeRouter.tsx';
+import { Train, ShieldAlert, Footprints, AlertTriangle, CheckCircle2, Navigation, Layers } from 'lucide-react';
+
+export type CommuterTab = 'COACH' | 'INTERCHANGE' | 'BRIDGES';
 
 export const App: React.FC = () => {
   const [selectedPlatform, setSelectedPlatform] = useState<number | null>(3);
   const [selectedFobId, setSelectedFobId] = useState<string | null>('middle-fob');
   const [trains, setTrains] = useState<ActiveTrainState[]>(INITIAL_TRAIN_ROSTER);
+
+  // Interchange routing state
+  const [sourcePf, setSourcePf] = useState<number>(3); // Western Fast
+  const [targetPf, setTargetPf] = useState<number>(10); // Central Fast
+  const [activeTab, setActiveTab] = useState<CommuterTab>('COACH');
 
   // Train Physics Simulation Loop (Advances every 200ms)
   useEffect(() => {
@@ -21,6 +30,19 @@ export const App: React.FC = () => {
 
   const activePlatform = DADAR_PLATFORMS.find((p) => p.number === selectedPlatform);
   const activeTrain = trains.find((t) => t.platformNumber === selectedPlatform);
+  const activeRoute = calculateDetailedInterchangePath(sourcePf, targetPf);
+
+  const handleSelectPlatformFrom3D = (pfNum: number) => {
+    setSelectedPlatform(pfNum);
+    // If on interchange tab, update target or source intelligently
+    if (activeTab === 'INTERCHANGE') {
+      if (sourcePf === pfNum) {
+        // already source
+      } else {
+        setTargetPf(pfNum);
+      }
+    }
+  };
 
   return (
     <div className="flex flex-col h-screen w-screen bg-gray-950 text-gray-100 font-sans">
@@ -37,7 +59,7 @@ export const App: React.FC = () => {
                 DADAR JUNCTION
               </span>
             </h1>
-            <p className="text-[11px] text-gray-400">14 Platforms · Dynamic Suburban Rake Tracking</p>
+            <p className="text-[11px] text-gray-400">14 Platforms · 3D Interchange & Coach Pulse</p>
           </div>
         </div>
 
@@ -63,69 +85,127 @@ export const App: React.FC = () => {
           <DadarStationCanvas
             trains={trains}
             selectedPlatform={selectedPlatform}
-            onSelectPlatform={setSelectedPlatform}
+            onSelectPlatform={handleSelectPlatformFrom3D}
             selectedFobId={selectedFobId}
             onSelectFob={setSelectedFobId}
+            activeRoute={activeTab === 'INTERCHANGE' ? activeRoute : null}
           />
         </section>
 
         {/* Live Commuter Side Panel */}
         <aside 
           aria-label="Commuter Telemetry & Bridge Pulse"
-          className="w-full md:w-96 border-t md:border-t-0 md:border-l border-gray-800 bg-gray-900/80 p-4 overflow-y-auto shrink-0 flex flex-col space-y-4"
+          className="w-full md:w-96 border-t md:border-t-0 md:border-l border-gray-800 bg-gray-900/80 p-3.5 overflow-y-auto shrink-0 flex flex-col space-y-3.5"
         >
-          {/* Active Coach Alignment HUD */}
-          <CoachAlignmentHUD train={activeTrain} platformNumber={selectedPlatform ?? 3} />
+          {/* Commuter Mode Switcher Tabs */}
+          <div className="grid grid-cols-3 gap-1 bg-gray-950 p-1 rounded-xl border border-gray-800 shrink-0">
+            <button
+              type="button"
+              onClick={() => setActiveTab('COACH')}
+              className={`flex items-center justify-center space-x-1.5 py-1.5 px-2 rounded-lg text-xs font-bold transition ${
+                activeTab === 'COACH'
+                  ? 'bg-blue-600 text-white shadow'
+                  : 'text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              <Train className="w-3.5 h-3.5" />
+              <span>Coach Locator</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('INTERCHANGE')}
+              className={`flex items-center justify-center space-x-1.5 py-1.5 px-2 rounded-lg text-xs font-bold transition ${
+                activeTab === 'INTERCHANGE'
+                  ? 'bg-blue-600 text-white shadow'
+                  : 'text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              <Navigation className="w-3.5 h-3.5" />
+              <span>Interchange</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('BRIDGES')}
+              className={`flex items-center justify-center space-x-1.5 py-1.5 px-2 rounded-lg text-xs font-bold transition ${
+                activeTab === 'BRIDGES'
+                  ? 'bg-blue-600 text-white shadow'
+                  : 'text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Bridge Pulse</span>
+            </button>
+          </div>
 
-          {/* Selected Platform Inspection Card */}
-          {activePlatform ? (
-            <div className="p-3.5 rounded-xl bg-gray-950/90 border border-gray-800 shadow-lg">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">
-                  Platform Telemetry
-                </span>
-                <span className="text-xs px-2 py-0.5 rounded font-mono font-semibold bg-blue-950 text-blue-300 border border-blue-800">
-                  {activePlatform.line} LINE
-                </span>
-              </div>
-              <div className="flex items-baseline justify-between mb-2">
-                <span className="text-xl font-black text-white">Platform {activePlatform.number}</span>
-                <span className="text-xs text-gray-400">{activePlatform.side} Concourses</span>
-              </div>
+          {/* TAB 1: COACH LOCATOR */}
+          {activeTab === 'COACH' && (
+            <div className="flex flex-col space-y-3">
+              <CoachAlignmentHUD train={activeTrain} platformNumber={selectedPlatform ?? 3} />
 
-              {/* Verified Platform Amenities */}
-              <div className="grid grid-cols-2 gap-1.5 text-[11px]">
-                <div className="flex items-center space-x-1.5 text-gray-300">
-                  <CheckCircle2 className={`w-3.5 h-3.5 ${activePlatform.amenities.hasLift ? 'text-emerald-400' : 'text-gray-600'}`} />
-                  <span>{activePlatform.amenities.hasLift ? 'Working Lift' : 'No Lift'}</span>
+              {/* Selected Platform Inspection Card */}
+              {activePlatform ? (
+                <div className="p-3 rounded-xl bg-gray-950/90 border border-gray-800 shadow-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
+                      Platform Telemetry
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded font-mono font-semibold bg-blue-950 text-blue-300 border border-blue-800">
+                      {activePlatform.line} LINE
+                    </span>
+                  </div>
+                  <div className="flex items-baseline justify-between mb-2">
+                    <span className="text-xl font-black text-white">Platform {activePlatform.number}</span>
+                    <span className="text-xs text-gray-400">{activePlatform.side} Concourses</span>
+                  </div>
+
+                  {/* Verified Platform Amenities */}
+                  <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                    <div className="flex items-center space-x-1.5 text-gray-300">
+                      <CheckCircle2 className={`w-3.5 h-3.5 ${activePlatform.amenities.hasLift ? 'text-emerald-400' : 'text-gray-600'}`} />
+                      <span>{activePlatform.amenities.hasLift ? 'Working Lift' : 'No Lift'}</span>
+                    </div>
+                    <div className="flex items-center space-x-1.5 text-gray-300">
+                      <CheckCircle2 className={`w-3.5 h-3.5 ${activePlatform.amenities.hasEscalator ? 'text-emerald-400' : 'text-gray-600'}`} />
+                      <span>{activePlatform.amenities.hasEscalator ? 'Escalator' : 'No Escalator'}</span>
+                    </div>
+                    <div className="flex items-center space-x-1.5 text-gray-300">
+                      <CheckCircle2 className={`w-3.5 h-3.5 ${activePlatform.amenities.hasWaterKiosk ? 'text-emerald-400' : 'text-gray-600'}`} />
+                      <span>Drinking Water</span>
+                    </div>
+                    <div className="flex items-center space-x-1.5 text-gray-300">
+                      <CheckCircle2 className={`w-3.5 h-3.5 ${activePlatform.amenities.hasJanAahaar ? 'text-emerald-400' : 'text-gray-600'}`} />
+                      <span>Jan Aahaar</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center space-x-1.5 text-gray-300">
-                  <CheckCircle2 className={`w-3.5 h-3.5 ${activePlatform.amenities.hasEscalator ? 'text-emerald-400' : 'text-gray-600'}`} />
-                  <span>{activePlatform.amenities.hasEscalator ? 'Escalator' : 'No Escalator'}</span>
-                </div>
-                <div className="flex items-center space-x-1.5 text-gray-300">
-                  <CheckCircle2 className={`w-3.5 h-3.5 ${activePlatform.amenities.hasWaterKiosk ? 'text-emerald-400' : 'text-gray-600'}`} />
-                  <span>Drinking Water</span>
-                </div>
-                <div className="flex items-center space-x-1.5 text-gray-300">
-                  <CheckCircle2 className={`w-3.5 h-3.5 ${activePlatform.amenities.hasJanAahaar ? 'text-emerald-400' : 'text-gray-600'}`} />
-                  <span>Jan Aahaar</span>
-                </div>
-              </div>
+              ) : null}
             </div>
-          ) : null}
+          )}
 
-          {/* Overbridge Congestion Radar */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center space-x-1.5">
-                <Footprints className="w-3.5 h-3.5 text-blue-400" />
-                <span>Overbridge Congestion</span>
-              </h2>
-              <span className="text-[10px] text-gray-500">Live Pulse</span>
+          {/* TAB 2: SMART INTERCHANGE ROUTE */}
+          {activeTab === 'INTERCHANGE' && (
+            <div className="flex flex-col space-y-3">
+              <InterchangeRouter
+                sourcePf={sourcePf}
+                targetPf={targetPf}
+                onSelectSourcePf={setSourcePf}
+                onSelectTargetPf={setTargetPf}
+                route={activeRoute}
+              />
             </div>
+          )}
 
-            <div className="space-y-2.5">
+          {/* TAB 3: OVERBRIDGE CONGESTION RADAR */}
+          {activeTab === 'BRIDGES' && (
+            <div className="flex flex-col space-y-2.5">
+              <div className="flex items-center justify-between mb-1">
+                <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center space-x-1.5">
+                  <Footprints className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Overbridge Congestion</span>
+                </h2>
+                <span className="text-[10px] text-gray-500">Live Pulse</span>
+              </div>
+
               {DADAR_FOBS.map((fob) => {
                 const isSelected = selectedFobId === fob.id;
                 const badgeColor =
@@ -168,11 +248,11 @@ export const App: React.FC = () => {
                 );
               })}
             </div>
-          </div>
+          )}
 
           {/* Platform Quick-Selector Grid (1 to 14) */}
-          <div>
-            <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
+          <div className="pt-2 border-t border-gray-800">
+            <h2 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">
               Inspect Platform (1 to 14)
             </h2>
             <div className="grid grid-cols-7 gap-1.5">

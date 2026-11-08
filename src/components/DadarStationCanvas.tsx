@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { DADAR_PLATFORMS, DADAR_FOBS, CongestionLevel } from '../domain/station.ts';
 import { ActiveTrainState } from '../domain/trainRakeEngine.ts';
+import { DetailedRoute } from '../domain/interchangeRouter.ts';
 import { Eye, Layers, Compass, ZoomIn } from 'lucide-react';
 
 export type CameraViewPreset = 'OVERVIEW' | 'WESTERN' | 'CENTRAL' | 'BRIDGES';
@@ -13,6 +14,7 @@ interface DadarStationCanvasProps {
   onSelectPlatform?: (platformNumber: number) => void;
   selectedFobId?: string | null;
   onSelectFob?: (fobId: string) => void;
+  activeRoute?: DetailedRoute | null;
 }
 
 export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
@@ -21,6 +23,7 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
   onSelectPlatform,
   selectedFobId,
   onSelectFob,
+  activeRoute,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const [activeView, setActiveView] = useState<CameraViewPreset>('OVERVIEW');
@@ -34,6 +37,7 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
   const platformMeshesRef = useRef<Map<number, THREE.Mesh>>(new Map());
   const fobMeshesRef = useRef<Map<string, THREE.Mesh>>(new Map());
   const trainGroupsRef = useRef<Map<string, THREE.Group>>(new Map());
+  const routeGroupRef = useRef<THREE.Group | null>(null);
 
   // Camera preset handler with smooth lerp
   const applyCameraPreset = useCallback((preset: CameraViewPreset) => {
@@ -345,6 +349,10 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
       platformMeshesRef.current.clear();
       fobMeshesRef.current.clear();
       trainGroupsRef.current.clear();
+      if (routeGroupRef.current) {
+        scene.remove(routeGroupRef.current);
+        routeGroupRef.current = null;
+      }
     };
   }, [applyCameraPreset, onSelectFob, onSelectPlatform]);
 
@@ -419,6 +427,76 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
       trainGroup.visible = train.lifecycle !== 'CLEAR';
     });
   }, [trains]);
+
+  // Synchronize 3D Waypoint Path Vector for Interchange Route
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    // Dispose old route group if present
+    if (routeGroupRef.current) {
+      scene.remove(routeGroupRef.current);
+      routeGroupRef.current.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) {
+          obj.geometry.dispose();
+          if (Array.isArray(obj.material)) {
+            obj.material.forEach((m) => m.dispose());
+          } else {
+            obj.material.dispose();
+          }
+        }
+      });
+      routeGroupRef.current = null;
+    }
+
+    if (!activeRoute || activeRoute.waypoints3D.length < 2) return;
+
+    const routeGroup = new THREE.Group();
+
+    // 1. Build smooth 3D Catmull-Rom spline through waypoints
+    const points = activeRoute.waypoints3D.map(
+      (w) => new THREE.Vector3(w.x, w.y + 0.35, w.z)
+    );
+    const curve = new THREE.CatmullRomCurve3(points);
+
+    const tubeGeo = new THREE.TubeGeometry(curve, 64, 0.28, 8, false);
+    const tubeMat = new THREE.MeshStandardMaterial({
+      color: '#38bdf8',
+      emissive: new THREE.Color('#0284c7'),
+      emissiveIntensity: 0.9,
+      roughness: 0.2,
+      metalness: 0.8,
+    });
+    const tubeMesh = new THREE.Mesh(tubeGeo, tubeMat);
+    tubeMesh.castShadow = true;
+    routeGroup.add(tubeMesh);
+
+    // 2. Start Beacon Pin on Source Platform
+    const startW = activeRoute.waypoints3D[0];
+    const pinGeo = new THREE.CylinderGeometry(0.5, 0.1, 2.0, 16);
+    const startPinMat = new THREE.MeshStandardMaterial({
+      color: '#10b981',
+      emissive: '#10b981',
+      emissiveIntensity: 0.7,
+    });
+    const startPin = new THREE.Mesh(pinGeo, startPinMat);
+    startPin.position.set(startW.x, startW.y + 1.2, startW.z);
+    routeGroup.add(startPin);
+
+    // 3. Finish Beacon Pin on Target Platform
+    const endW = activeRoute.waypoints3D[activeRoute.waypoints3D.length - 1];
+    const endPinMat = new THREE.MeshStandardMaterial({
+      color: '#a855f7',
+      emissive: '#a855f7',
+      emissiveIntensity: 0.7,
+    });
+    const endPin = new THREE.Mesh(pinGeo, endPinMat);
+    endPin.position.set(endW.x, endW.y + 1.2, endW.z);
+    routeGroup.add(endPin);
+
+    scene.add(routeGroup);
+    routeGroupRef.current = routeGroup;
+  }, [activeRoute]);
 
   // Synchronize selection highlight for platforms and FOBs
   useEffect(() => {
@@ -511,6 +589,17 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
         </div>
       )}
 
+      {/* Active Route Telemetry Chip */}
+      {activeRoute && activeRoute.sourcePlatform !== activeRoute.targetPlatform && (
+        <div className="absolute top-4 right-4 z-10 hidden sm:flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-blue-950/90 border border-blue-500/50 text-xs text-blue-200 shadow-xl backdrop-blur animate-fade-in">
+          <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse"></span>
+          <span className="font-bold">
+            3D Route: PF {activeRoute.sourcePlatform} → PF {activeRoute.targetPlatform}
+          </span>
+          <span className="text-gray-400 font-mono">({activeRoute.recommendedFob.name})</span>
+        </div>
+      )}
+
       {/* Spatial Legend */}
       <div className="absolute bottom-4 right-4 z-10 hidden sm:flex items-center space-x-3 px-3 py-1.5 rounded-lg bg-gray-900/80 border border-gray-800 text-[11px] text-gray-300 shadow-lg backdrop-blur">
         <div className="flex items-center space-x-1">
@@ -528,6 +617,10 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
         <div className="flex items-center space-x-1">
           <span className="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
           <span>AC Local</span>
+        </div>
+        <div className="flex items-center space-x-1 border-l border-gray-700 pl-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+          <span>Route Vector</span>
         </div>
       </div>
     </div>
