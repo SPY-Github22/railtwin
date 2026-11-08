@@ -8,7 +8,12 @@ import { CoachAlignmentHUD } from './components/CoachAlignmentHUD.tsx';
 import { InterchangeRouter } from './components/InterchangeRouter.tsx';
 import { PlatformFlipAlert } from './components/PlatformFlipAlert.tsx';
 import { SuburbanTimetableHUD } from './components/SuburbanTimetableHUD.tsx';
-import { Train, ShieldAlert, Footprints, AlertTriangle, CheckCircle2, Navigation, Layers, CalendarClock } from 'lucide-react';
+import {
+  Train,
+  ShieldAlert,
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-react';
 
 export type CommuterTab = 'COACH' | 'INTERCHANGE' | 'TIMETABLE' | 'BRIDGES';
 
@@ -18,9 +23,10 @@ export const App: React.FC = () => {
   const [trains, setTrains] = useState<ActiveTrainState[]>(INITIAL_TRAIN_ROSTER);
 
   // Interchange routing state
-  const [sourcePf, setSourcePf] = useState<number>(3); // Western Fast
-  const [targetPf, setTargetPf] = useState<number>(10); // Central Fast
+  const [sourcePf, setSourcePf] = useState<number>(3);
+  const [targetPf, setTargetPf] = useState<number>(10);
   const [activeTab, setActiveTab] = useState<CommuterTab>('COACH');
+  const [isDrawerCollapsed, setIsDrawerCollapsed] = useState<boolean>(false);
 
   // Platform Flip active alert
   const [flipAlert, setFlipAlert] = useState<PlatformFlipEvent | null>(() => {
@@ -37,12 +43,12 @@ export const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const activePlatform = DADAR_PLATFORMS.find((p) => p.number === selectedPlatform);
   const activeTrain = trains.find((t) => t.platformNumber === selectedPlatform);
   const activeRoute = calculateDetailedInterchangePath(sourcePf, targetPf);
 
   const handleSelectPlatformFrom3D = (pfNum: number) => {
     setSelectedPlatform(pfNum);
+    setIsDrawerCollapsed(false);
     if (activeTab === 'INTERCHANGE') {
       if (sourcePf !== pfNum) {
         setTargetPf(pfNum);
@@ -54,269 +60,226 @@ export const App: React.FC = () => {
     setTargetPf(newPlatform);
     setSelectedPlatform(newPlatform);
     setActiveTab('INTERCHANGE');
+    setIsDrawerCollapsed(false);
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-gray-950 text-gray-100 font-sans">
-      {/* Top Header HUD */}
-      <header className="h-14 border-b border-gray-800 bg-gray-900/95 px-4 flex items-center justify-between backdrop-blur z-20 shrink-0">
-        <div className="flex items-center space-x-3">
-          <div className="p-2 bg-blue-600 rounded-lg shadow-lg shadow-blue-500/20">
-            <Train className="w-5 h-5 text-white" />
+    <div className="relative w-screen h-screen overflow-hidden bg-slate-100 font-sans text-slate-800">
+      {/* 3D WebGL Canvas: Full-Screen Hero Viewport */}
+      <div className="absolute inset-0 z-0">
+        <DadarStationCanvas
+          trains={trains}
+          selectedPlatform={selectedPlatform}
+          onSelectPlatform={handleSelectPlatformFrom3D}
+          selectedFobId={selectedFobId}
+          onSelectFob={setSelectedFobId}
+          activeRoute={activeTab === 'INTERCHANGE' ? activeRoute : null}
+        />
+      </div>
+
+      {/* Floating Top Header Bar */}
+      <header className="absolute top-4 inset-x-4 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 z-20 flex items-center justify-between sm:space-x-3 bg-white/95 px-3.5 py-2 rounded-2xl border border-slate-200/90 shadow-lg shadow-slate-200/50 backdrop-blur">
+        {/* Brand & Station Indicator */}
+        <div className="flex items-center space-x-2.5">
+          <div className="p-1.5 bg-blue-600 rounded-xl text-white shadow-sm">
+            <Train className="w-4 h-4" />
           </div>
           <div>
-            <h1 className="font-bold text-sm sm:text-base tracking-wide flex items-center space-x-2">
-              <span>RailTwin 3D</span>
-              <span className="text-[10px] sm:text-xs px-2 py-0.5 bg-blue-900/60 text-blue-300 rounded border border-blue-700 font-mono">
-                DADAR JUNCTION
+            <div className="flex items-center space-x-1.5">
+              <span className="font-extrabold text-sm tracking-tight text-slate-900">RailTwin</span>
+              <span className="text-[10px] px-1.5 py-0.2 bg-blue-50 text-blue-700 font-bold rounded-md border border-blue-200">
+                DADAR
               </span>
-            </h1>
-            <p className="text-[11px] text-gray-400">14 Platforms · Platform Flip Radar & Spatial Telemetry</p>
+            </div>
+            <p className="text-[10px] text-slate-400 font-medium hidden sm:block">14 Platforms · 3D Live Twin</p>
           </div>
         </div>
 
-        <div className="flex items-center space-x-3">
-          <div className="hidden sm:flex items-center space-x-2 text-xs bg-gray-950/80 px-3 py-1.5 rounded-lg border border-gray-800">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span className="text-gray-300">Live EMU Telemetry Active</span>
-          </div>
-          <button 
+        {/* Minimalist Mode Switcher Tabs */}
+        <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/80 mx-2 text-xs font-semibold">
+          <button
             type="button"
-            className="flex items-center space-x-1.5 px-3 py-1.5 bg-red-600/20 border border-red-500/40 text-red-300 rounded-lg text-xs hover:bg-red-600/30 transition active:scale-95"
+            onClick={() => {
+              setActiveTab('COACH');
+              setIsDrawerCollapsed(false);
+            }}
+            className={`px-2.5 py-1 rounded-lg transition ${
+              activeTab === 'COACH' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+            }`}
           >
-            <ShieldAlert className="w-4 h-4 text-red-400" />
-            <span className="hidden xs:inline">Report Chokepoint</span>
+            Coach
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('INTERCHANGE');
+              setIsDrawerCollapsed(false);
+            }}
+            className={`px-2.5 py-1 rounded-lg transition ${
+              activeTab === 'INTERCHANGE' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Route
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('TIMETABLE');
+              setIsDrawerCollapsed(false);
+            }}
+            className={`px-2.5 py-1 rounded-lg transition ${
+              activeTab === 'TIMETABLE' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Schedule
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('BRIDGES');
+              setIsDrawerCollapsed(false);
+            }}
+            className={`px-2.5 py-1 rounded-lg transition ${
+              activeTab === 'BRIDGES' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Bridges
           </button>
         </div>
+
+        {/* Report Button */}
+        <button
+          type="button"
+          className="flex items-center space-x-1 px-2.5 py-1 bg-red-50 text-red-600 border border-red-200 rounded-xl text-xs font-bold hover:bg-red-100 transition active:scale-95 shrink-0"
+        >
+          <ShieldAlert className="w-3.5 h-3.5 text-red-500" />
+          <span className="hidden md:inline">Report Chokepoint</span>
+        </button>
       </header>
 
-      {/* Main Spatial Stage */}
-      <main className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
-        {/* 3D WebGL Canvas Viewport */}
-        <section aria-label="3D Station Visualizer" className="flex-1 relative h-1/2 md:h-full">
-          {/* Platform Flip Emergency Floating Alert */}
-          {flipAlert && (
-            <div className="absolute top-16 left-4 right-4 sm:left-6 sm:right-auto sm:max-w-md z-20">
-              <PlatformFlipAlert
-                event={flipAlert}
-                onRerouteToNewPlatform={handleRerouteAfterPlatformFlip}
-                onDismiss={() => setFlipAlert(null)}
-              />
-            </div>
-          )}
-
-          <DadarStationCanvas
-            trains={trains}
-            selectedPlatform={selectedPlatform}
-            onSelectPlatform={handleSelectPlatformFrom3D}
-            selectedFobId={selectedFobId}
-            onSelectFob={setSelectedFobId}
-            activeRoute={activeTab === 'INTERCHANGE' ? activeRoute : null}
+      {/* Floating Platform Flip Alert (Appears dynamically) */}
+      {flipAlert && (
+        <div className="absolute top-20 inset-x-4 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:w-[500px] z-30">
+          <PlatformFlipAlert
+            event={flipAlert}
+            onRerouteToNewPlatform={handleRerouteAfterPlatformFlip}
+            onDismiss={() => setFlipAlert(null)}
           />
-        </section>
+        </div>
+      )}
 
-        {/* Live Commuter Side Panel */}
-        <aside 
-          aria-label="Commuter Telemetry & Bridge Pulse"
-          className="w-full md:w-96 border-t md:border-t-0 md:border-l border-gray-800 bg-gray-900/80 p-3.5 overflow-y-auto shrink-0 flex flex-col space-y-3.5"
-        >
-          {/* Commuter Mode Switcher Tabs (4 Tabs) */}
-          <div className="grid grid-cols-4 gap-1 bg-gray-950 p-1 rounded-xl border border-gray-800 shrink-0">
+      {/* Floating Minimalist Bottom Sheet Card (Glanceable & Decluttered) */}
+      <div className="absolute bottom-4 inset-x-4 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:w-[520px] z-20">
+        <div className="bg-white/95 rounded-3xl border border-slate-200/90 shadow-2xl shadow-slate-300/50 backdrop-blur overflow-hidden transition-all duration-300">
+          {/* Header Row of the Floating Card with Collapse Toggle */}
+          <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                {activeTab === 'COACH' && `Platform ${selectedPlatform ?? 3} Focus`}
+                {activeTab === 'INTERCHANGE' && 'Cross-Platform Navigation'}
+                {activeTab === 'TIMETABLE' && 'Suburban Live Departures'}
+                {activeTab === 'BRIDGES' && 'Overbridge Congestion'}
+              </span>
+            </div>
+
             <button
               type="button"
-              onClick={() => setActiveTab('COACH')}
-              className={`flex items-center justify-center space-x-1 py-1.5 px-1.5 rounded-lg text-[11px] font-bold transition ${
-                activeTab === 'COACH'
-                  ? 'bg-blue-600 text-white shadow'
-                  : 'text-gray-400 hover:text-gray-200'
-              }`}
+              onClick={() => setIsDrawerCollapsed(!isDrawerCollapsed)}
+              title={isDrawerCollapsed ? 'Expand card' : 'Collapse card'}
+              aria-label={isDrawerCollapsed ? 'Expand card' : 'Collapse card'}
+              className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
             >
-              <Train className="w-3.5 h-3.5" />
-              <span>Coach</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('INTERCHANGE')}
-              className={`flex items-center justify-center space-x-1 py-1.5 px-1.5 rounded-lg text-[11px] font-bold transition ${
-                activeTab === 'INTERCHANGE'
-                  ? 'bg-blue-600 text-white shadow'
-                  : 'text-gray-400 hover:text-gray-200'
-              }`}
-            >
-              <Navigation className="w-3.5 h-3.5" />
-              <span>Route</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('TIMETABLE')}
-              className={`flex items-center justify-center space-x-1 py-1.5 px-1.5 rounded-lg text-[11px] font-bold transition ${
-                activeTab === 'TIMETABLE'
-                  ? 'bg-blue-600 text-white shadow'
-                  : 'text-gray-400 hover:text-gray-200'
-              }`}
-            >
-              <CalendarClock className="w-3.5 h-3.5" />
-              <span>Schedule</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('BRIDGES')}
-              className={`flex items-center justify-center space-x-1 py-1.5 px-1.5 rounded-lg text-[11px] font-bold transition ${
-                activeTab === 'BRIDGES'
-                  ? 'bg-blue-600 text-white shadow'
-                  : 'text-gray-400 hover:text-gray-200'
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              <span>Bridges</span>
+              {isDrawerCollapsed ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </button>
           </div>
 
-          {/* TAB 1: COACH LOCATOR */}
-          {activeTab === 'COACH' && (
-            <div className="flex flex-col space-y-3">
-              <CoachAlignmentHUD train={activeTrain} platformNumber={selectedPlatform ?? 3} />
+          {/* Quick Platform Carousel (1 to 14) */}
+          <div className="px-4 py-2 border-b border-slate-100 flex items-center space-x-1.5 overflow-x-auto">
+            {DADAR_PLATFORMS.map((pf) => (
+              <button
+                key={pf.id}
+                type="button"
+                onClick={() => {
+                  setSelectedPlatform(pf.number);
+                  setIsDrawerCollapsed(false);
+                }}
+                className={`flex-shrink-0 w-8 h-8 rounded-xl flex flex-col items-center justify-center font-bold text-xs transition ${
+                  selectedPlatform === pf.number
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                }`}
+              >
+                <span>{pf.number}</span>
+              </button>
+            ))}
+          </div>
 
-              {/* Selected Platform Inspection Card */}
-              {activePlatform ? (
-                <div className="p-3 rounded-xl bg-gray-950/90 border border-gray-800 shadow-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
-                      Platform Telemetry
-                    </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded font-mono font-semibold bg-blue-950 text-blue-300 border border-blue-800">
-                      {activePlatform.line} LINE
-                    </span>
-                  </div>
-                  <div className="flex items-baseline justify-between mb-2">
-                    <span className="text-xl font-black text-white">Platform {activePlatform.number}</span>
-                    <span className="text-xs text-gray-400">{activePlatform.side} Concourses</span>
-                  </div>
+          {/* Body Content (Toggles open/closed) */}
+          {!isDrawerCollapsed && (
+            <div className="p-4 max-h-[380px] overflow-y-auto">
+              {/* TAB 1: COACH LOCATOR */}
+              {activeTab === 'COACH' && (
+                <CoachAlignmentHUD train={activeTrain} platformNumber={selectedPlatform ?? 3} />
+              )}
 
-                  {/* Verified Platform Amenities */}
-                  <div className="grid grid-cols-2 gap-1.5 text-[11px]">
-                    <div className="flex items-center space-x-1.5 text-gray-300">
-                      <CheckCircle2 className={`w-3.5 h-3.5 ${activePlatform.amenities.hasLift ? 'text-emerald-400' : 'text-gray-600'}`} />
-                      <span>{activePlatform.amenities.hasLift ? 'Working Lift' : 'No Lift'}</span>
-                    </div>
-                    <div className="flex items-center space-x-1.5 text-gray-300">
-                      <CheckCircle2 className={`w-3.5 h-3.5 ${activePlatform.amenities.hasEscalator ? 'text-emerald-400' : 'text-gray-600'}`} />
-                      <span>{activePlatform.amenities.hasEscalator ? 'Escalator' : 'No Escalator'}</span>
-                    </div>
-                    <div className="flex items-center space-x-1.5 text-gray-300">
-                      <CheckCircle2 className={`w-3.5 h-3.5 ${activePlatform.amenities.hasWaterKiosk ? 'text-emerald-400' : 'text-gray-600'}`} />
-                      <span>Drinking Water</span>
-                    </div>
-                    <div className="flex items-center space-x-1.5 text-gray-300">
-                      <CheckCircle2 className={`w-3.5 h-3.5 ${activePlatform.amenities.hasJanAahaar ? 'text-emerald-400' : 'text-gray-600'}`} />
-                      <span>Jan Aahaar</span>
-                    </div>
-                  </div>
+              {/* TAB 2: SMART INTERCHANGE ROUTE */}
+              {activeTab === 'INTERCHANGE' && (
+                <InterchangeRouter
+                  sourcePf={sourcePf}
+                  targetPf={targetPf}
+                  onSelectSourcePf={setSourcePf}
+                  onSelectTargetPf={setTargetPf}
+                  route={activeRoute}
+                />
+              )}
+
+              {/* TAB 3: TIMETABLE */}
+              {activeTab === 'TIMETABLE' && (
+                <SuburbanTimetableHUD onSelectPlatform={handleSelectPlatformFrom3D} />
+              )}
+
+              {/* TAB 4: BRIDGES RADAR */}
+              {activeTab === 'BRIDGES' && (
+                <div className="space-y-2">
+                  {DADAR_FOBS.map((fob) => {
+                    const isSelected = selectedFobId === fob.id;
+                    const badgeColor =
+                      fob.congestion === 'FREE_FLOW'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : fob.congestion === 'MODERATE'
+                        ? 'bg-amber-50 text-amber-700 border-amber-200'
+                        : 'bg-red-50 text-red-700 border-red-200';
+
+                    return (
+                      <button
+                        key={fob.id}
+                        type="button"
+                        onClick={() => setSelectedFobId(fob.id)}
+                        className={`w-full text-left p-3 rounded-2xl transition border ${
+                          isSelected
+                            ? 'bg-blue-50/50 border-blue-500 shadow-xs'
+                            : 'bg-white border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-bold text-xs text-slate-900">{fob.name}</span>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${badgeColor}`}>
+                            {fob.congestion.replace('_', ' ')}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-slate-500">
+                          <span>Cross time: ~{Math.ceil(fob.averageCrossSeconds / 60)} mins</span>
+                          <span>{fob.lastUpdated}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
-              ) : null}
+              )}
             </div>
           )}
-
-          {/* TAB 2: SMART INTERCHANGE ROUTE */}
-          {activeTab === 'INTERCHANGE' && (
-            <div className="flex flex-col space-y-3">
-              <InterchangeRouter
-                sourcePf={sourcePf}
-                targetPf={targetPf}
-                onSelectSourcePf={setSourcePf}
-                onSelectTargetPf={setTargetPf}
-                route={activeRoute}
-              />
-            </div>
-          )}
-
-          {/* TAB 3: SUBURBAN TIMETABLE & FAST VS SLOW OPTIMIZER */}
-          {activeTab === 'TIMETABLE' && (
-            <div className="flex flex-col space-y-3">
-              <SuburbanTimetableHUD onSelectPlatform={handleSelectPlatformFrom3D} />
-            </div>
-          )}
-
-          {/* TAB 4: OVERBRIDGE CONGESTION RADAR */}
-          {activeTab === 'BRIDGES' && (
-            <div className="flex flex-col space-y-2.5">
-              <div className="flex items-center justify-between mb-1">
-                <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center space-x-1.5">
-                  <Footprints className="w-3.5 h-3.5 text-blue-400" />
-                  <span>Overbridge Congestion</span>
-                </h2>
-                <span className="text-[10px] text-gray-500">Live Pulse</span>
-              </div>
-
-              {DADAR_FOBS.map((fob) => {
-                const isSelected = selectedFobId === fob.id;
-                const badgeColor =
-                  fob.congestion === 'FREE_FLOW'
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                    : fob.congestion === 'MODERATE'
-                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                    : 'bg-red-500/20 text-red-300 border-red-500/40';
-
-                return (
-                  <button
-                    key={fob.id}
-                    type="button"
-                    onClick={() => setSelectedFobId(fob.id)}
-                    className={`w-full text-left p-3 rounded-xl transition border ${
-                      isSelected
-                        ? 'bg-gray-900 border-blue-500 shadow-lg shadow-blue-500/10'
-                        : 'bg-gray-950/70 border-gray-800 hover:border-gray-700'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="font-semibold text-xs text-gray-200">{fob.name}</span>
-                      <span className={`text-[10px] px-2 py-0.5 rounded border font-semibold ${badgeColor}`}>
-                        {fob.congestion.replace('_', ' ')}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between text-[11px] text-gray-400">
-                      <span>Transit: ~{Math.ceil(fob.averageCrossSeconds / 60)} mins</span>
-                      <span className="text-gray-500">{fob.lastUpdated}</span>
-                    </div>
-
-                    {fob.congestion === 'CHOKED' && (
-                      <div className="mt-2 flex items-center space-x-1.5 text-[10px] text-red-400 bg-red-950/60 p-1.5 rounded border border-red-900/60">
-                        <AlertTriangle className="w-3 h-3 shrink-0" />
-                        <span>Crush alert: avoid central stairs, use North FOB ramp.</span>
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Platform Quick-Selector Grid (1 to 14) */}
-          <div className="pt-2 border-t border-gray-800">
-            <h2 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">
-              Inspect Platform (1 to 14)
-            </h2>
-            <div className="grid grid-cols-7 gap-1.5">
-              {DADAR_PLATFORMS.map((pf) => (
-                <button
-                  key={pf.id}
-                  type="button"
-                  onClick={() => setSelectedPlatform(pf.number)}
-                  className={`p-1.5 rounded-lg border text-center transition ${
-                    selectedPlatform === pf.number
-                      ? 'bg-blue-600 border-blue-400 text-white shadow-md'
-                      : 'bg-gray-950/80 border-gray-800 text-gray-300 hover:border-gray-700'
-                  }`}
-                >
-                  <div className="text-[11px] font-black">{pf.number}</div>
-                  <div className="text-[9px] text-gray-400">{pf.line === 'WESTERN' ? 'WR' : 'CR'}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </aside>
-      </main>
+        </div>
+      </div>
     </div>
   );
 };

@@ -14,24 +14,21 @@ export const PlatformFlipAlert: React.FC<PlatformFlipAlertProps> = ({
   onDismiss,
 }) => {
   return (
-    <div className="relative overflow-hidden p-3 sm:p-4 rounded-2xl bg-gradient-to-r from-red-950 via-red-900/90 to-amber-950 border-2 border-red-500 shadow-2xl shadow-red-950/60 animate-bounce-subtle z-30">
-      {/* Background Pulse Glow */}
-      <div className="absolute -right-8 -top-8 w-28 h-28 bg-red-500/20 rounded-full blur-2xl pointer-events-none"></div>
-
+    <div className="relative overflow-hidden p-3.5 rounded-2xl bg-white border-2 border-red-500 shadow-xl shadow-red-500/10 z-30">
       <div className="flex items-start justify-between">
         <div className="flex items-center space-x-2.5">
-          <div className="p-2 rounded-xl bg-red-600 text-white shadow-lg animate-pulse shrink-0">
-            <AlertTriangle className="w-5 h-5" />
+          <div className="p-2 rounded-xl bg-red-50 text-red-600 border border-red-200 shrink-0">
+            <AlertTriangle className="w-5 h-5 text-red-600 animate-pulse" />
           </div>
           <div>
             <div className="flex items-center space-x-2">
-              <span className="text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-red-800 text-red-200 border border-red-700">
-                CRITICAL PLATFORM FLIP
+              <span className="text-[10px] font-black uppercase tracking-wider px-1.5 py-0.2 rounded bg-red-100 text-red-700">
+                PLATFORM CHANGED
               </span>
-              <span className="text-xs font-mono font-bold text-gray-300">#{event.trainNumber}</span>
+              <span className="text-xs font-mono font-bold text-slate-400">#{event.trainNumber}</span>
             </div>
-            <h3 className="text-sm font-black text-white mt-0.5">
-              {event.destination} Fast reassigned from Platform {event.oldPlatform} to Platform {event.newPlatform}!
+            <h3 className="text-sm font-extrabold text-slate-900 mt-0.5">
+              {event.destination} local reassigned from Platform {event.oldPlatform} to Platform {event.newPlatform}!
             </h3>
           </div>
         </div>
@@ -41,31 +38,29 @@ export const PlatformFlipAlert: React.FC<PlatformFlipAlertProps> = ({
           onClick={onDismiss}
           title="Dismiss Alert"
           aria-label="Dismiss Alert"
-          className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-red-800/40 transition shrink-0"
+          className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition shrink-0"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
 
-      <div className="mt-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 bg-black/40 p-2.5 rounded-xl border border-red-800/50">
-        <div className="flex items-center space-x-3 text-xs text-red-200">
-          <div className="flex items-center space-x-1.5">
-            <span className="line-through text-red-400 font-bold">PF {event.oldPlatform}</span>
-            <ArrowRight className="w-3.5 h-3.5 text-white" />
-            <span className="text-base font-black text-yellow-300 px-2 py-0.5 rounded bg-red-950 border border-yellow-500/60">
-              PF {event.newPlatform}
-            </span>
-          </div>
-          <span className="text-gray-400">·</span>
+      <div className="mt-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+        <div className="flex items-center space-x-2 text-xs text-slate-600">
+          <span className="line-through text-slate-400 font-bold">PF {event.oldPlatform}</span>
+          <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
+          <span className="text-sm font-black text-red-600 px-2 py-0.5 rounded bg-red-50 border border-red-200">
+            PF {event.newPlatform}
+          </span>
+          <span className="text-slate-400">·</span>
           <span>Arriving in ~{Math.ceil(event.etaSeconds / 60)} mins</span>
         </div>
 
         <button
           type="button"
           onClick={() => onRerouteToNewPlatform(event.newPlatform)}
-          className="flex items-center justify-center space-x-2 px-3 py-1.5 rounded-xl bg-yellow-400 hover:bg-yellow-300 text-gray-950 font-black text-xs shadow-lg shadow-yellow-500/20 transition active:scale-95"
+          className="flex items-center justify-center space-x-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm transition active:scale-95"
         >
-          <Compass className="w-4 h-4 text-gray-950" />
+          <Compass className="w-3.5 h-3.5" />
           <span>Guide Me to PF {event.newPlatform} in 3D</span>
         </button>
       </div>
