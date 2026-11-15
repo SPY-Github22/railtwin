@@ -1,86 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { DADAR_PLATFORMS } from './domain/station.ts';
 import { INITIAL_TRAIN_ROSTER, advanceTrainPhysics, ActiveTrainState } from './domain/trainRakeEngine.ts';
-import { calculateDetailedInterchangePath } from './domain/interchangeRouter.ts';
-import { detectPlatformFlipEvents, PlatformFlipEvent } from './domain/stationScheduleEngine.ts';
-import {
-  CrowdReport,
-  aggregateBridgeCongestion,
-} from './domain/crowdReportEngine.ts';
 import { DadarStationCanvas } from './components/DadarStationCanvas.tsx';
-import { CoachAlignmentHUD } from './components/CoachAlignmentHUD.tsx';
-import { InterchangeRouter } from './components/InterchangeRouter.tsx';
-import { PlatformFlipAlert } from './components/PlatformFlipAlert.tsx';
-import { SuburbanTimetableHUD } from './components/SuburbanTimetableHUD.tsx';
-import { StationAccessibilityHUD } from './components/StationAccessibilityHUD.tsx';
-import { CrowdReportModal } from './components/CrowdReportModal.tsx';
-import {
-  Train,
-  ShieldAlert,
-  ChevronDown,
-  ChevronUp,
-} from 'lucide-react';
-
-export type CommuterTab = 'COACH' | 'INTERCHANGE' | 'TIMETABLE' | 'BRIDGES';
+import { Train, Info } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [selectedPlatform, setSelectedPlatform] = useState<number | null>(3);
-  const [selectedFobId, setSelectedFobId] = useState<string | null>('middle-fob');
   const [trains, setTrains] = useState<ActiveTrainState[]>(INITIAL_TRAIN_ROSTER);
-
-  // Interchange routing state
-  const [sourcePf, setSourcePf] = useState<number>(3);
-  const [targetPf, setTargetPf] = useState<number>(10);
-  const [activeTab, setActiveTab] = useState<CommuterTab>(() => {
-    if (typeof window !== 'undefined') {
-      const p = new URLSearchParams(window.location.search).get('tab');
-      if (p === 'INTERCHANGE' || p === 'TIMETABLE' || p === 'BRIDGES' || p === 'COACH') {
-        return p;
-      }
-    }
-    return 'COACH';
-  });
-  const [isDrawerCollapsed, setIsDrawerCollapsed] = useState<boolean>(false);
-
-  // Crowdsourced Chokepoint Reporting State
-  const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return new URLSearchParams(window.location.search).get('report') === 'true';
-    }
-    return false;
-  });
-  const [crowdReports, setCrowdReports] = useState<CrowdReport[]>([
-    {
-      id: 'rep-init-1',
-      timestampMs: Date.now() - 3 * 60 * 1000,
-      bridgeId: 'middle-fob',
-      severity: 'SLOW_MOVING',
-      incident: 'STAIRCASE_JAM',
-      isMockedLocation: true,
-      notes: 'Peak transfer crowd moving between PF 4 and 8',
-    },
-    {
-      id: 'rep-init-2',
-      timestampMs: Date.now() - 8 * 60 * 1000,
-      bridgeId: 'north-fob',
-      severity: 'NORMAL',
-      incident: 'NORMAL_COMMUTE',
-      isMockedLocation: true,
-    },
-  ]);
-
-  const bridgeCongestion = aggregateBridgeCongestion(crowdReports);
-
-  // Platform Flip active alert
-  const [flipAlert, setFlipAlert] = useState<PlatformFlipEvent | null>(() => {
-    if (typeof window !== 'undefined') {
-      if (new URLSearchParams(window.location.search).get('noflip') === 'true') {
-        return null;
-      }
-    }
-    const detected = detectPlatformFlipEvents();
-    return detected.length > 0 ? detected[0] : null;
-  });
 
   // Train Physics Simulation Loop with Tab Sleep Resynchronization
   useEffect(() => {
@@ -91,14 +17,13 @@ export const App: React.FC = () => {
       const elapsed = (now - lastTime) / 1000;
       lastTime = now;
 
-      // Clamp elapsed time to max 2.0s per tick to avoid sudden burst jumps
+      // Safe delta clamp to prevent sudden jumps
       const safeDelta = Math.min(Math.max(elapsed, 0.05), 2.0);
       setTrains((prevTrains) => prevTrains.map((t) => advanceTrainPhysics(t, safeDelta)));
     }, 200);
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        // Reset lastTime to prevent delta burst when returning from background tab
         lastTime = performance.now();
       }
     };
@@ -110,240 +35,94 @@ export const App: React.FC = () => {
     };
   }, []);
 
+  const activePlatformData = DADAR_PLATFORMS.find((p) => p.number === selectedPlatform);
   const activeTrain = trains.find((t) => t.platformNumber === selectedPlatform);
-  const activeRoute = calculateDetailedInterchangePath(sourcePf, targetPf);
-
-  const handleSelectPlatformFrom3D = (pfNum: number) => {
-    setSelectedPlatform(pfNum);
-    setIsDrawerCollapsed(false);
-    if (activeTab === 'INTERCHANGE') {
-      if (sourcePf !== pfNum) {
-        setTargetPf(pfNum);
-      }
-    }
-  };
-
-  const handleRerouteAfterPlatformFlip = (newPlatform: number) => {
-    setTargetPf(newPlatform);
-    setSelectedPlatform(newPlatform);
-    setActiveTab('INTERCHANGE');
-    setIsDrawerCollapsed(false);
-    setFlipAlert(null); // Clear emergency banner to reveal 3D tube path
-  };
-
-  const handleSubmitReport = (reportData: Omit<CrowdReport, 'id' | 'timestampMs'>) => {
-    const newReport: CrowdReport = {
-      ...reportData,
-      id: `rep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      timestampMs: Date.now(),
-    };
-    setCrowdReports((prev) => [newReport, ...prev]);
-  };
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-slate-100 font-sans text-slate-800">
-      {/* 3D WebGL Canvas: Full-Screen Hero Viewport */}
+      {/* 3D WebGL Canvas: Full-Screen Station Foundation */}
       <div className="absolute inset-0 z-0">
         <DadarStationCanvas
           trains={trains}
           selectedPlatform={selectedPlatform}
-          onSelectPlatform={handleSelectPlatformFrom3D}
-          selectedFobId={selectedFobId}
-          onSelectFob={setSelectedFobId}
-          activeRoute={activeTab === 'INTERCHANGE' ? activeRoute : null}
+          onSelectPlatform={setSelectedPlatform}
         />
       </div>
 
-      {/* Floating Top Header Bar */}
-      <header className="absolute top-4 inset-x-4 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 z-20 flex items-center justify-between sm:space-x-3 bg-white/95 px-3.5 py-2 rounded-2xl border border-slate-200/90 shadow-lg shadow-slate-200/50 backdrop-blur">
-        {/* Brand & Station Indicator */}
+      {/* Clean, Minimalist Top Header */}
+      <header className="absolute top-4 inset-x-4 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 z-20 flex items-center justify-between space-x-3 bg-white/95 px-4 py-2.5 rounded-2xl border border-slate-200/90 shadow-lg shadow-slate-200/50 backdrop-blur">
         <div className="flex items-center space-x-2.5">
-          <div className="p-1.5 bg-blue-600 rounded-xl text-white shadow-sm">
+          <div className="p-1.5 bg-blue-600 rounded-xl text-white shadow-xs">
             <Train className="w-4 h-4" />
           </div>
           <div>
             <div className="flex items-center space-x-1.5">
-              <span className="font-extrabold text-sm tracking-tight text-slate-900">RailTwin</span>
-              <span className="text-[10px] px-1.5 py-0.2 bg-blue-50 text-blue-700 font-bold rounded-md border border-blue-200">
+              <span className="font-black text-sm tracking-tight text-slate-900">RailTwin</span>
+              <span className="text-[10px] px-1.5 py-0.2 bg-blue-50 text-blue-700 font-black rounded-md border border-blue-200">
                 DADAR
               </span>
             </div>
-            <p className="text-[10px] text-slate-400 font-medium hidden sm:block">14 Platforms · 3D Live Twin</p>
+            <p className="text-[10px] text-slate-400 font-medium">14 Platforms · 3D Digital Twin</p>
           </div>
         </div>
-
-        {/* Minimalist Mode Switcher Tabs */}
-        <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/80 mx-2 text-xs font-semibold">
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('COACH');
-              setIsDrawerCollapsed(false);
-            }}
-            className={`px-2.5 py-1 rounded-lg transition ${
-              activeTab === 'COACH' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Coach
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('INTERCHANGE');
-              setIsDrawerCollapsed(false);
-            }}
-            className={`px-2.5 py-1 rounded-lg transition ${
-              activeTab === 'INTERCHANGE' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Route
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('TIMETABLE');
-              setIsDrawerCollapsed(false);
-            }}
-            className={`px-2.5 py-1 rounded-lg transition ${
-              activeTab === 'TIMETABLE' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Schedule
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('BRIDGES');
-              setIsDrawerCollapsed(false);
-            }}
-            className={`px-2.5 py-1 rounded-lg transition ${
-              activeTab === 'BRIDGES' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Bridges
-          </button>
-        </div>
-
-        {/* Report Button */}
-        <button
-          type="button"
-          onClick={() => setIsReportModalOpen(true)}
-          className="flex items-center space-x-1.5 px-3 py-1.5 bg-rose-50 text-rose-600 border border-rose-200 rounded-xl text-xs font-bold hover:bg-rose-100 transition active:scale-95 shrink-0"
-        >
-          <ShieldAlert className="w-3.5 h-3.5 text-rose-500" />
-          <span className="hidden md:inline">Report Chokepoint</span>
-        </button>
       </header>
 
-      {/* Floating Platform Flip Alert (Appears dynamically) */}
-      {flipAlert && (
-        <div className="absolute top-20 inset-x-4 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:w-[500px] z-30">
-          <PlatformFlipAlert
-            event={flipAlert}
-            onRerouteToNewPlatform={handleRerouteAfterPlatformFlip}
-            onDismiss={() => setFlipAlert(null)}
-          />
-        </div>
-      )}
-
-      {/* Floating Minimalist Bottom Sheet Card (Glanceable & Decluttered) */}
-      <div className="absolute bottom-4 inset-x-4 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:w-[520px] z-20">
-        <div className="bg-white/95 rounded-3xl border border-slate-200/90 shadow-2xl shadow-slate-300/50 backdrop-blur overflow-hidden transition-all duration-300">
-          {/* Header Row of the Floating Card with Collapse Toggle */}
-          <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                {activeTab === 'COACH' && `Platform ${selectedPlatform ?? 3} Focus`}
-                {activeTab === 'INTERCHANGE' && 'Cross-Platform Navigation'}
-                {activeTab === 'TIMETABLE' && 'Suburban Live Departures'}
-                {activeTab === 'BRIDGES' && 'Overbridge Congestion'}
-              </span>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setIsDrawerCollapsed(!isDrawerCollapsed)}
-              title={isDrawerCollapsed ? 'Expand card' : 'Collapse card'}
-              aria-label={isDrawerCollapsed ? 'Expand card' : 'Collapse card'}
-              className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
+      {/* Clean, Uncluttered Bottom Platform Bar (Step 1 Foundation) */}
+      <div className="absolute bottom-6 inset-x-4 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:w-[580px] z-20 flex flex-col items-center space-y-2 pointer-events-auto">
+        {/* Selected Platform Quick Status Pill */}
+        {activePlatformData && (
+          <div className="flex items-center space-x-2.5 px-4 py-2 bg-white/95 rounded-2xl border border-slate-200 shadow-md backdrop-blur text-xs font-semibold text-slate-800 animate-in fade-in duration-150">
+            <span
+              className={`px-2 py-0.5 rounded-lg text-white font-extrabold text-[11px] ${
+                activePlatformData.line === 'WESTERN' ? 'bg-blue-600' : 'bg-red-600'
+              }`}
             >
-              {isDrawerCollapsed ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            </button>
+              PF {activePlatformData.number}
+            </span>
+            <span className="text-slate-600 font-medium">
+              Platform {activePlatformData.number} ({activePlatformData.line === 'WESTERN' ? 'Western Line' : 'Central Line'} · {activePlatformData.side} Concourse)
+            </span>
+            {activeTrain ? (
+              <span className="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200">
+                Train #{activeTrain.trainNumber} ({activeTrain.destination})
+              </span>
+            ) : (
+              <span className="text-slate-400 text-[11px] italic">No active train at platform</span>
+            )}
           </div>
+        )}
 
-          {/* Quick Platform Carousel (1 to 14) */}
-          <div className="px-4 py-2 border-b border-slate-100 flex items-center space-x-1.5 overflow-x-auto">
-            {DADAR_PLATFORMS.map((pf) => (
+        {/* 14 Platform Selector Chips */}
+        <div className="flex items-center space-x-1 p-1.5 bg-white/95 rounded-2xl border border-slate-200 shadow-xl backdrop-blur overflow-x-auto max-w-full">
+          {DADAR_PLATFORMS.map((pf) => {
+            const isSelected = selectedPlatform === pf.number;
+            const isWestern = pf.line === 'WESTERN';
+            return (
               <button
                 key={pf.id}
                 type="button"
-                onClick={() => {
-                  setSelectedPlatform(pf.number);
-                  setIsDrawerCollapsed(false);
-                }}
-                className={`flex-shrink-0 w-8 h-8 rounded-xl flex flex-col items-center justify-center font-bold text-xs transition ${
-                  selectedPlatform === pf.number
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                onClick={() => setSelectedPlatform(pf.number)}
+                className={`w-8 h-8 rounded-xl font-bold text-xs flex items-center justify-center transition active:scale-95 ${
+                  isSelected
+                    ? isWestern
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-red-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
+                title={`Select Platform ${pf.number}`}
               >
-                <span>{pf.number}</span>
+                {pf.number}
               </button>
-            ))}
-          </div>
+            );
+          })}
+        </div>
 
-          {/* Body Content (Toggles open/closed) */}
-          {!isDrawerCollapsed && (
-            <div className="p-4 max-h-[380px] overflow-y-auto">
-              {/* TAB 1: COACH LOCATOR */}
-              {activeTab === 'COACH' && (
-                <CoachAlignmentHUD train={activeTrain} platformNumber={selectedPlatform ?? 3} />
-              )}
-
-              {/* TAB 2: SMART INTERCHANGE ROUTE */}
-              {activeTab === 'INTERCHANGE' && (
-                <InterchangeRouter
-                  sourcePf={sourcePf}
-                  targetPf={targetPf}
-                  onSelectSourcePf={setSourcePf}
-                  onSelectTargetPf={setTargetPf}
-                  route={activeRoute}
-                />
-              )}
-
-              {/* TAB 3: TIMETABLE */}
-              {activeTab === 'TIMETABLE' && (
-                <SuburbanTimetableHUD onSelectPlatform={handleSelectPlatformFrom3D} />
-              )}
-
-              {/* TAB 4: BRIDGES & ACCESSIBILITY RADAR */}
-              {activeTab === 'BRIDGES' && (
-                <StationAccessibilityHUD
-                  selectedFobId={selectedFobId}
-                  onSelectFob={setSelectedFobId}
-                  bridgeCongestion={bridgeCongestion}
-                  onOpenReportModal={(fobId) => {
-                    if (fobId) setSelectedFobId(fobId);
-                    setIsReportModalOpen(true);
-                  }}
-                />
-              )}
-            </div>
-          )}
+        {/* Subtle Guidance Hint */}
+        <div className="flex items-center space-x-1.5 text-[11px] text-slate-500 bg-white/80 px-3 py-1 rounded-full border border-slate-200/80 shadow-xs backdrop-blur">
+          <Info className="w-3 h-3 text-blue-500" />
+          <span>Click any platform number to highlight it in 3D. Drag to rotate and inspect freely.</span>
         </div>
       </div>
-
-      {/* Crowdsourced Chokepoint Reporting Modal */}
-      <CrowdReportModal
-        isOpen={isReportModalOpen}
-        onClose={() => setIsReportModalOpen(false)}
-        onSubmitReport={handleSubmitReport}
-        initialFobId={
-          selectedFobId === 'north-fob' || selectedFobId === 'middle-fob' || selectedFobId === 'south-fob'
-            ? selectedFobId
-            : 'middle-fob'
-        }
-      />
     </div>
   );
 };
