@@ -1,13 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { DADAR_PLATFORMS, DADAR_FOBS } from './domain/station.ts';
+import { DADAR_PLATFORMS } from './domain/station.ts';
 import { INITIAL_TRAIN_ROSTER, advanceTrainPhysics, ActiveTrainState } from './domain/trainRakeEngine.ts';
 import { calculateDetailedInterchangePath } from './domain/interchangeRouter.ts';
 import { detectPlatformFlipEvents, PlatformFlipEvent } from './domain/stationScheduleEngine.ts';
+import {
+  CrowdReport,
+  aggregateBridgeCongestion,
+} from './domain/crowdReportEngine.ts';
 import { DadarStationCanvas } from './components/DadarStationCanvas.tsx';
 import { CoachAlignmentHUD } from './components/CoachAlignmentHUD.tsx';
 import { InterchangeRouter } from './components/InterchangeRouter.tsx';
 import { PlatformFlipAlert } from './components/PlatformFlipAlert.tsx';
 import { SuburbanTimetableHUD } from './components/SuburbanTimetableHUD.tsx';
+import { StationAccessibilityHUD } from './components/StationAccessibilityHUD.tsx';
+import { CrowdReportModal } from './components/CrowdReportModal.tsx';
 import {
   Train,
   ShieldAlert,
@@ -27,6 +33,30 @@ export const App: React.FC = () => {
   const [targetPf, setTargetPf] = useState<number>(10);
   const [activeTab, setActiveTab] = useState<CommuterTab>('COACH');
   const [isDrawerCollapsed, setIsDrawerCollapsed] = useState<boolean>(false);
+
+  // Crowdsourced Chokepoint Reporting State
+  const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
+  const [crowdReports, setCrowdReports] = useState<CrowdReport[]>([
+    {
+      id: 'rep-init-1',
+      timestampMs: Date.now() - 3 * 60 * 1000,
+      bridgeId: 'middle-fob',
+      severity: 'SLOW_MOVING',
+      incident: 'STAIRCASE_JAM',
+      isMockedLocation: true,
+      notes: 'Peak transfer crowd moving between PF 4 and 8',
+    },
+    {
+      id: 'rep-init-2',
+      timestampMs: Date.now() - 8 * 60 * 1000,
+      bridgeId: 'north-fob',
+      severity: 'NORMAL',
+      incident: 'NORMAL_COMMUTE',
+      isMockedLocation: true,
+    },
+  ]);
+
+  const bridgeCongestion = aggregateBridgeCongestion(crowdReports);
 
   // Platform Flip active alert
   const [flipAlert, setFlipAlert] = useState<PlatformFlipEvent | null>(() => {
@@ -80,6 +110,15 @@ export const App: React.FC = () => {
     setSelectedPlatform(newPlatform);
     setActiveTab('INTERCHANGE');
     setIsDrawerCollapsed(false);
+  };
+
+  const handleSubmitReport = (reportData: Omit<CrowdReport, 'id' | 'timestampMs'>) => {
+    const newReport: CrowdReport = {
+      ...reportData,
+      id: `rep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      timestampMs: Date.now(),
+    };
+    setCrowdReports((prev) => [newReport, ...prev]);
   };
 
   return (
@@ -169,9 +208,10 @@ export const App: React.FC = () => {
         {/* Report Button */}
         <button
           type="button"
-          className="flex items-center space-x-1 px-2.5 py-1 bg-red-50 text-red-600 border border-red-200 rounded-xl text-xs font-bold hover:bg-red-100 transition active:scale-95 shrink-0"
+          onClick={() => setIsReportModalOpen(true)}
+          className="flex items-center space-x-1.5 px-3 py-1.5 bg-rose-50 text-rose-600 border border-rose-200 rounded-xl text-xs font-bold hover:bg-rose-100 transition active:scale-95 shrink-0"
         >
-          <ShieldAlert className="w-3.5 h-3.5 text-red-500" />
+          <ShieldAlert className="w-3.5 h-3.5 text-rose-500" />
           <span className="hidden md:inline">Report Chokepoint</span>
         </button>
       </header>
@@ -257,48 +297,34 @@ export const App: React.FC = () => {
                 <SuburbanTimetableHUD onSelectPlatform={handleSelectPlatformFrom3D} />
               )}
 
-              {/* TAB 4: BRIDGES RADAR */}
+              {/* TAB 4: BRIDGES & ACCESSIBILITY RADAR */}
               {activeTab === 'BRIDGES' && (
-                <div className="space-y-2">
-                  {DADAR_FOBS.map((fob) => {
-                    const isSelected = selectedFobId === fob.id;
-                    const badgeColor =
-                      fob.congestion === 'FREE_FLOW'
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                        : fob.congestion === 'MODERATE'
-                        ? 'bg-amber-50 text-amber-700 border-amber-200'
-                        : 'bg-red-50 text-red-700 border-red-200';
-
-                    return (
-                      <button
-                        key={fob.id}
-                        type="button"
-                        onClick={() => setSelectedFobId(fob.id)}
-                        className={`w-full text-left p-3 rounded-2xl transition border ${
-                          isSelected
-                            ? 'bg-blue-50/50 border-blue-500 shadow-xs'
-                            : 'bg-white border-slate-200 hover:border-slate-300'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-bold text-xs text-slate-900">{fob.name}</span>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${badgeColor}`}>
-                            {fob.congestion.replace('_', ' ')}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-xs text-slate-500">
-                          <span>Cross time: ~{Math.ceil(fob.averageCrossSeconds / 60)} mins</span>
-                          <span>{fob.lastUpdated}</span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                <StationAccessibilityHUD
+                  selectedFobId={selectedFobId}
+                  onSelectFob={setSelectedFobId}
+                  bridgeCongestion={bridgeCongestion}
+                  onOpenReportModal={(fobId) => {
+                    if (fobId) setSelectedFobId(fobId);
+                    setIsReportModalOpen(true);
+                  }}
+                />
               )}
             </div>
           )}
         </div>
       </div>
+
+      {/* Crowdsourced Chokepoint Reporting Modal */}
+      <CrowdReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        onSubmitReport={handleSubmitReport}
+        initialFobId={
+          selectedFobId === 'north-fob' || selectedFobId === 'middle-fob' || selectedFobId === 'south-fob'
+            ? selectedFobId
+            : 'middle-fob'
+        }
+      />
     </div>
   );
 };
