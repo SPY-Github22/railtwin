@@ -103,7 +103,15 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
   onSelectPlatform,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
-  const [activePreset, setActivePreset] = useState<'OVERVIEW' | 'WESTERN' | 'CENTRAL'>('OVERVIEW');
+  const [activePreset, setActivePreset] = useState<'OVERVIEW' | 'WESTERN' | 'CENTRAL' | 'NORTH_VIEW'>(() => {
+    if (typeof window !== 'undefined') {
+      const v = new URLSearchParams(window.location.search).get('view');
+      if (v === 'NORTH') return 'NORTH_VIEW';
+      if (v === 'WESTERN') return 'WESTERN';
+      if (v === 'CENTRAL') return 'CENTRAL';
+    }
+    return 'OVERVIEW';
+  });
 
   // References to keep Three.js alive
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -112,6 +120,7 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const platformMeshesRef = useRef<Map<number, THREE.Mesh>>(new Map());
   const platformSignsRef = useRef<Map<number, THREE.Mesh>>(new Map());
+  const billboardSignsRef = useRef<THREE.Mesh[]>([]);
   const trainGroupsRef = useRef<Map<string, THREE.Group>>(new Map());
 
   // Calculates exact X position for platforms and tracks
@@ -126,7 +135,7 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
   }, []);
 
   // Camera Presets (Only triggered when user clicks preset buttons)
-  const setCameraPreset = (preset: 'OVERVIEW' | 'WESTERN' | 'CENTRAL') => {
+  const setCameraPreset = (preset: 'OVERVIEW' | 'WESTERN' | 'CENTRAL' | 'NORTH_VIEW') => {
     setActivePreset(preset);
     if (!cameraRef.current || !controlsRef.current) return;
     const camera = cameraRef.current;
@@ -135,6 +144,10 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
     switch (preset) {
       case 'OVERVIEW':
         camera.position.set(0, 62, 78);
+        controls.target.set(0, 0, 0);
+        break;
+      case 'NORTH_VIEW':
+        camera.position.set(0, 62, -78);
         controls.target.set(0, 0, 0);
         break;
       case 'WESTERN':
@@ -177,7 +190,15 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
     const width = mount.clientWidth > 0 ? mount.clientWidth : window.innerWidth;
     const height = mount.clientHeight > 0 ? mount.clientHeight : window.innerHeight;
     const camera = new THREE.PerspectiveCamera(40, width / height, 0.5, 450);
-    camera.position.set(0, 62, 78);
+    if (activePreset === 'NORTH_VIEW') {
+      camera.position.set(0, 62, -78);
+    } else if (activePreset === 'WESTERN') {
+      camera.position.set(-18, 32, 42);
+    } else if (activePreset === 'CENTRAL') {
+      camera.position.set(20, 32, 42);
+    } else {
+      camera.position.set(0, 62, 78);
+    }
     cameraRef.current = camera;
 
     // C. WebGL Renderer
@@ -336,26 +357,27 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
       roof.castShadow = true;
       pfGroup.add(roof);
 
-      // 5. Crisp, High-Visibility Platform Signboard (Visible in 3D directly!)
+      // 5. Crisp, High-Visibility Platform Signboards (Auto-Faces Camera)
       const labelText = `PF ${pf.number}`;
       const lineSubtext = isWestern ? 'Western' : 'Central';
       const labelTexture = createPlatformLabelTexture(labelText, lineSubtext, accentColor);
-      const signGeo = new THREE.PlaneGeometry(3.2, 1.6);
+      const signGeo = new THREE.PlaneGeometry(3.6, 1.8);
       const signMat = new THREE.MeshBasicMaterial({
         map: labelTexture,
-        side: THREE.DoubleSide,
+        side: THREE.FrontSide,
         transparent: true,
       });
 
-      // Front & Back facing Signboards overhead
-      const signMesh = new THREE.Mesh(signGeo, signMat);
-      signMesh.position.set(px, 6.0, -32);
-      pfGroup.add(signMesh);
-      platformSignsRef.current.set(pf.number, signMesh);
-
-      const signMeshSouth = new THREE.Mesh(signGeo, signMat);
-      signMeshSouth.position.set(px, 6.0, 32);
-      pfGroup.add(signMeshSouth);
+      // Signboards placed at North, Center, and South of platform
+      [-32, 0, 32].forEach((sz) => {
+        const signMesh = new THREE.Mesh(signGeo, signMat);
+        signMesh.position.set(px, 5.8, sz);
+        pfGroup.add(signMesh);
+        billboardSignsRef.current.push(signMesh);
+        if (sz === 0) {
+          platformSignsRef.current.set(pf.number, signMesh);
+        }
+      });
 
       scene.add(pfGroup);
     });
@@ -438,13 +460,26 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
         fobGroup.add(stair);
       });
 
-      // Overhead Banner Sign for the Bridge
+      // Overhead Banner Signs for the Bridge (Dual-Sided: Never Mirrored)
       const bannerTexture = createBridgeBannerTexture(fob.name);
-      const bannerGeo = new THREE.PlaneGeometry(16, 2.0);
-      const bannerMat = new THREE.MeshBasicMaterial({ map: bannerTexture, side: THREE.DoubleSide, transparent: true });
-      const banner = new THREE.Mesh(bannerGeo, bannerMat);
-      banner.position.set(0, bridgeHeight + 3.8, fob.zPos);
-      fobGroup.add(banner);
+      const bannerGeo = new THREE.PlaneGeometry(18, 2.2);
+      const bannerMat = new THREE.MeshBasicMaterial({
+        map: bannerTexture,
+        side: THREE.FrontSide,
+        transparent: true,
+      });
+
+      // South-facing banner (visible when looking North)
+      const bannerSouth = new THREE.Mesh(bannerGeo, bannerMat);
+      bannerSouth.position.set(0, bridgeHeight + 3.8, fob.zPos + bridgeWidth / 2 + 0.1);
+      bannerSouth.rotation.y = 0;
+      fobGroup.add(bannerSouth);
+
+      // North-facing banner (flipped 180° so text reads correctly when looking South from the backside!)
+      const bannerNorth = new THREE.Mesh(bannerGeo, bannerMat);
+      bannerNorth.position.set(0, bridgeHeight + 3.8, fob.zPos - bridgeWidth / 2 - 0.1);
+      bannerNorth.rotation.y = Math.PI;
+      fobGroup.add(bannerNorth);
 
       scene.add(fobGroup);
     });
@@ -503,11 +538,23 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
     });
     resizeObserver.observe(mount);
 
-    // L. Render Animation Loop
+    // L. Render Animation Loop: Dynamically Rotates Signs to Always Face User
     let animationFrameId: number;
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
       controls.update(); // Smooth damping
+
+      // Cylindrical Billboarding: Rotate all platform signboards to always face the camera
+      // Prevents text mirroring from any orbit angle!
+      if (billboardSignsRef.current.length > 0) {
+        const camX = camera.position.x;
+        const camZ = camera.position.z;
+        for (let i = 0; i < billboardSignsRef.current.length; i++) {
+          const sign = billboardSignsRef.current[i];
+          sign.rotation.y = Math.atan2(camX - sign.position.x, camZ - sign.position.z);
+        }
+      }
+
       renderer.render(scene, camera);
     };
     animate();
@@ -516,6 +563,7 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
       cancelAnimationFrame(animationFrameId);
       resizeObserver.disconnect();
       renderer.domElement.removeEventListener('click', handleClick);
+      billboardSignsRef.current = [];
 
       scene.traverse((obj) => {
         if (obj instanceof THREE.Mesh) {
@@ -629,7 +677,18 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
               : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          Full Station
+          South (Front)
+        </button>
+        <button
+          type="button"
+          onClick={() => setCameraPreset('NORTH_VIEW')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+            activePreset === 'NORTH_VIEW'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          North (Back)
         </button>
         <button
           type="button"
