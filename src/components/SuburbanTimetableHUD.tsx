@@ -14,7 +14,7 @@ export type TimetableFilter = 'ALL' | 'WESTERN' | 'CENTRAL' | 'AC';
 
 export const SuburbanTimetableHUD: React.FC<SuburbanTimetableHUDProps> = ({ onSelectPlatform }) => {
   const [filter, setFilter] = useState<TimetableFilter>('ALL');
-  const [decisionDest, setDecisionDest] = useState<'Borivali' | 'Kalyan'>('Borivali');
+  const [decisionDest, setDecisionDest] = useState<string>('Borivali');
 
   const fastVsSlow = evaluateFastVsSlowDecision(decisionDest);
 
@@ -25,38 +25,32 @@ export const SuburbanTimetableHUD: React.FC<SuburbanTimetableHUDProps> = ({ onSe
     return true;
   });
 
+  const supportedCorridors = ['Borivali', 'Virar', 'Thane', 'Kalyan'];
+
   return (
     <div className="flex flex-col space-y-3">
       {/* Fast vs Slow Local Optimizer Card */}
       <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-200">
-        <div className="flex items-center justify-between mb-1.5">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 mb-1.5">
           <div className="flex items-center space-x-1.5 text-xs font-bold text-blue-900">
             <Zap className="w-3.5 h-3.5 text-amber-500" />
             <span>Fast vs Slow Optimizer</span>
           </div>
-          <div className="flex items-center space-x-1 text-[11px]">
-            <button
-              type="button"
-              onClick={() => setDecisionDest('Borivali')}
-              className={`px-2 py-0.5 rounded-full font-semibold ${
-                decisionDest === 'Borivali'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200'
-              }`}
-            >
-              Borivali
-            </button>
-            <button
-              type="button"
-              onClick={() => setDecisionDest('Kalyan')}
-              className={`px-2 py-0.5 rounded-full font-semibold ${
-                decisionDest === 'Kalyan'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200'
-              }`}
-            >
-              Kalyan
-            </button>
+          <div className="flex items-center space-x-1 text-[11px] overflow-x-auto pb-0.5">
+            {supportedCorridors.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setDecisionDest(c)}
+                className={`px-2 py-0.5 rounded-full font-semibold transition ${
+                  decisionDest.toLowerCase() === c.toLowerCase()
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200'
+                }`}
+              >
+                {c}
+              </button>
+            ))}
           </div>
         </div>
 

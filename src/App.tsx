@@ -34,13 +34,32 @@ export const App: React.FC = () => {
     return detected.length > 0 ? detected[0] : null;
   });
 
-  // Train Physics Simulation Loop (Advances every 200ms)
+  // Train Physics Simulation Loop with Tab Sleep Resynchronization
   useEffect(() => {
+    let lastTime = performance.now();
+
     const interval = setInterval(() => {
-      setTrains((prevTrains) => prevTrains.map((t) => advanceTrainPhysics(t, 0.2)));
+      const now = performance.now();
+      const elapsed = (now - lastTime) / 1000;
+      lastTime = now;
+
+      // Clamp elapsed time to max 2.0s per tick to avoid sudden burst jumps
+      const safeDelta = Math.min(Math.max(elapsed, 0.05), 2.0);
+      setTrains((prevTrains) => prevTrains.map((t) => advanceTrainPhysics(t, safeDelta)));
     }, 200);
 
-    return () => clearInterval(interval);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // Reset lastTime to prevent delta burst when returning from background tab
+        lastTime = performance.now();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   const activeTrain = trains.find((t) => t.platformNumber === selectedPlatform);

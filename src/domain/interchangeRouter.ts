@@ -27,10 +27,12 @@ export interface DetailedRoute {
 
 // 3D coordinate helper functions matching DadarStationCanvas geometry
 export const getPlatformX = (pfNum: number): number => {
-  if (pfNum <= 7) {
-    return -28 + (pfNum - 1) * 3.8;
+  // Defensive clamp strictly to Dadar's 1-14 platform domain
+  const clampedPf = Number.isFinite(pfNum) ? Math.max(1, Math.min(14, Math.round(pfNum))) : 1;
+  if (clampedPf <= 7) {
+    return -28 + (clampedPf - 1) * 3.8;
   } else {
-    return 5 + (pfNum - 8) * 3.8;
+    return 5 + (clampedPf - 8) * 3.8;
   }
 };
 

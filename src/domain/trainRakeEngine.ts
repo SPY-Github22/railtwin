@@ -145,12 +145,16 @@ export function calculateCoachPillarMapping(
   train: ActiveTrainState,
   coachPosition: number
 ): CoachPillarMapping {
-  const coach = train.coaches.find((c) => c.position === coachPosition) || train.coaches[0];
-  const total = train.carCount;
+  // Defensive normalization against NaN, negative, and overflow inputs
+  const total = Math.max(1, train.carCount);
+  const validCoachPos = Number.isFinite(coachPosition)
+    ? Math.max(1, Math.min(total, Math.round(coachPosition)))
+    : 1;
+
+  const coach = train.coaches.find((c) => c.position === validCoachPos) || train.coaches[0];
 
   // Platform has 24 pillars from South (Pillar 1) to North (Pillar 24)
-  // For Up trains (Northbound, e.g. Borivali/Kalyan), coach 1 starts at South
-  const targetPillar = Math.max(1, Math.min(24, Math.round((coachPosition / total) * 23) + 1));
+  const targetPillar = Math.max(1, Math.min(24, Math.round((validCoachPos / total) * 23) + 1));
 
   // Determine which Foot Overbridge the coach halts nearest to
   let fobProximity: 'North FOB' | 'Middle FOB' | 'South FOB';
@@ -180,17 +184,13 @@ export function calculateCoachPillarMapping(
 }
 
 /**
- * Updates train telemetry frame-by-frame (deltaSeconds)
+ * Executes a single discrete physics integration step (dt <= 1.0)
  */
-export function advanceTrainPhysics(
-  train: ActiveTrainState,
-  deltaSeconds: number
-): ActiveTrainState {
+function advanceSingleStep(train: ActiveTrainState, dt: number): ActiveTrainState {
   const updated = { ...train };
 
   switch (updated.lifecycle) {
     case 'APPROACHING': {
-      // Decelerate as approaching standstill position (0)
       const distanceRemaining = Math.abs(updated.positionZ - updated.targetStopZ);
       if (distanceRemaining < 0.4) {
         updated.positionZ = updated.targetStopZ;
@@ -198,9 +198,8 @@ export function advanceTrainPhysics(
         updated.lifecycle = 'HALTED';
         updated.haltSecondsRemaining = updated.totalHaltSeconds;
       } else {
-        // Move towards targetStopZ
         const speedMultiplier = Math.max(0.2, distanceRemaining / 20);
-        const step = 8 * speedMultiplier * deltaSeconds;
+        const step = 8 * speedMultiplier * dt;
         updated.positionZ = Math.min(updated.targetStopZ, updated.positionZ + step);
         updated.currentSpeedKmH = Math.round(speedMultiplier * 35);
       }
@@ -208,33 +207,31 @@ export function advanceTrainPhysics(
     }
 
     case 'HALTED': {
-      updated.haltSecondsRemaining = Math.max(0, updated.haltSecondsRemaining - deltaSeconds);
+      updated.haltSecondsRemaining = Math.max(0, updated.haltSecondsRemaining - dt);
       if (updated.haltSecondsRemaining <= 0) {
         updated.lifecycle = 'DEPARTING';
+        updated.currentSpeedKmH = 10;
       }
       break;
     }
 
     case 'DEPARTING': {
-      // Accelerate forward out of the station
-      const step = 14 * deltaSeconds;
+      const step = 14 * dt;
       updated.positionZ += step;
-      updated.currentSpeedKmH = Math.min(45, updated.currentSpeedKmH + 15 * deltaSeconds);
+      updated.currentSpeedKmH = Math.min(45, updated.currentSpeedKmH + 15 * dt);
 
       if (updated.positionZ > 65) {
-        // Exited station concourse
         updated.lifecycle = 'CLEAR';
         updated.positionZ = -100;
-        updated.nextEtaSeconds = 90; // Next train in 90 seconds
+        updated.nextEtaSeconds = 90;
         updated.currentSpeedKmH = 0;
       }
       break;
     }
 
     case 'CLEAR': {
-      updated.nextEtaSeconds = Math.max(0, updated.nextEtaSeconds - deltaSeconds);
+      updated.nextEtaSeconds = Math.max(0, updated.nextEtaSeconds - dt);
       if (updated.nextEtaSeconds <= 0) {
-        // New train approaches
         updated.lifecycle = 'APPROACHING';
         updated.positionZ = -55;
         updated.currentSpeedKmH = 32;
@@ -245,4 +242,37 @@ export function advanceTrainPhysics(
   }
 
   return updated;
+}
+
+/**
+ * Updates train telemetry frame-by-frame with defensive delta bounds and multi-stepping
+ */
+export function advanceTrainPhysics(
+  train: ActiveTrainState,
+  deltaSeconds: number
+): ActiveTrainState {
+  // Guard against NaN, Infinity, negative delta, or zero
+  if (!Number.isFinite(deltaSeconds) || deltaSeconds <= 0) {
+    return { ...train };
+  }
+
+  // If delta is small (normal render loop ~0.2s), advance in single step
+  if (deltaSeconds <= 1.0) {
+    return advanceSingleStep(train, deltaSeconds);
+  }
+
+  // Multi-step sub-stepping for phone wake-up / background catch-up
+  // Cap cumulative advancement at 60s to prevent browser hang
+  const cappedDelta = Math.min(60, deltaSeconds);
+  const stepSize = 0.5;
+  let current = { ...train };
+  let remaining = cappedDelta;
+
+  while (remaining > 0) {
+    const dt = Math.min(stepSize, remaining);
+    current = advanceSingleStep(current, dt);
+    remaining -= dt;
+  }
+
+  return current;
 }

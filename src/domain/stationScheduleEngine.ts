@@ -267,25 +267,28 @@ export function detectPlatformFlipEvents(roster: TimetableEntry[] = DADAR_TIMETA
     }));
 }
 
+export type SupportedOptimizerDestination = 'Borivali' | 'Virar' | 'Thane' | 'Kalyan';
+
 /**
  * Calculates whether taking a slow train leaving immediately is faster than waiting for a delayed fast train
+ * Supports major Western and Central corridors (Borivali, Virar, Thane, Kalyan) with graceful fallback.
  */
 export function evaluateFastVsSlowDecision(
-  destination: 'Borivali' | 'Kalyan' = 'Borivali'
+  destination: string = 'Borivali'
 ): FastVsSlowComparison {
-  if (destination === 'Borivali') {
+  const normDest = (destination || '').trim().toLowerCase();
+
+  if (normDest === 'borivali') {
     // Dadar to Borivali standard runtimes: Fast = 24 mins, Slow = 36 mins
-    const fastDelay = 7; // Fast train delayed by 7 mins
+    const fastDelay = 7;
     const fastLeavesIn = 7;
     const fastTravel = 24;
     const fastTotal = fastLeavesIn + fastTravel; // 31 mins
 
-    const slowLeavesIn = 1; // Slow train leaves in 1 min from PF 2
+    const slowLeavesIn = 1;
     const slowTravel = 34;
     const slowTotal = slowLeavesIn + slowTravel; // 35 mins
 
-    // Suppose fast is delayed by 14 mins:
-    // If fastLeavesIn = 14, total = 38 mins -> slow wins!
     const isSlowFaster = slowTotal < fastTotal;
     const diff = Math.abs(fastTotal - slowTotal);
 
@@ -313,33 +316,125 @@ export function evaluateFastVsSlowDecision(
     };
   }
 
-  // Dadar to Kalyan
-  const fastLeavesIn = 8;
-  const fastTravel = 42;
-  const fastTotal = fastLeavesIn + fastTravel; // 50 mins
+  if (normDest === 'virar') {
+    // Dadar to Virar: Fast = 52 mins, Slow = 72 mins
+    const fastLeavesIn = 4;
+    const fastTravel = 52;
+    const fastTotal = fastLeavesIn + fastTravel; // 56 mins
 
-  const slowLeavesIn = 1;
-  const slowTravel = 54;
-  const slowTotal = slowLeavesIn + slowTravel; // 55 mins
+    const slowLeavesIn = 2;
+    const slowTravel = 72;
+    const slowTotal = slowLeavesIn + slowTravel; // 74 mins
 
+    const diff = slowTotal - fastTotal;
+
+    return {
+      destination: 'Virar',
+      fastTrain: {
+        trainNumber: '90453',
+        platform: 4,
+        leavesInMinutes: fastLeavesIn,
+        travelMinutes: fastTravel,
+        totalTripMinutes: fastTotal,
+      },
+      slowTrain: {
+        trainNumber: '90455',
+        platform: 2,
+        leavesInMinutes: slowLeavesIn,
+        travelMinutes: slowTravel,
+        totalTripMinutes: slowTotal,
+      },
+      recommendedChoice: 'FAST',
+      timeDifferenceMinutes: diff,
+      adviceMessage: `Board the 08:48 Virar Fast from PF 4. Reaches Virar ${diff} mins faster than the Slow local.`,
+    };
+  }
+
+  if (normDest === 'thane') {
+    // Dadar to Thane: Fast = 26 mins, Slow = 36 mins
+    const fastLeavesIn = 6;
+    const fastTravel = 26;
+    const fastTotal = fastLeavesIn + fastTravel; // 32 mins
+
+    const slowLeavesIn = 1;
+    const slowTravel = 36;
+    const slowTotal = slowLeavesIn + slowTravel; // 37 mins
+
+    const diff = slowTotal - fastTotal;
+
+    return {
+      destination: 'Thane',
+      fastTrain: {
+        trainNumber: '97105',
+        platform: 11,
+        leavesInMinutes: fastLeavesIn,
+        travelMinutes: fastTravel,
+        totalTripMinutes: fastTotal,
+      },
+      slowTrain: {
+        trainNumber: '97103',
+        platform: 9,
+        leavesInMinutes: slowLeavesIn,
+        travelMinutes: slowTravel,
+        totalTripMinutes: slowTotal,
+      },
+      recommendedChoice: 'FAST',
+      timeDifferenceMinutes: diff,
+      adviceMessage: `Wait for 08:50 Fast from PF 11. Arrives in Thane ${diff} mins earlier than the Slow local.`,
+    };
+  }
+
+  if (normDest === 'kalyan') {
+    // Dadar to Kalyan: Fast = 42 mins, Slow = 54 mins
+    const fastLeavesIn = 8;
+    const fastTravel = 42;
+    const fastTotal = fastLeavesIn + fastTravel; // 50 mins
+
+    const slowLeavesIn = 1;
+    const slowTravel = 54;
+    const slowTotal = slowLeavesIn + slowTravel; // 55 mins
+
+    return {
+      destination: 'Kalyan',
+      fastTrain: {
+        trainNumber: '97105',
+        platform: 11,
+        leavesInMinutes: fastLeavesIn,
+        travelMinutes: fastTravel,
+        totalTripMinutes: fastTotal,
+      },
+      slowTrain: {
+        trainNumber: '97103',
+        platform: 9,
+        leavesInMinutes: slowLeavesIn,
+        travelMinutes: slowTravel,
+        totalTripMinutes: slowTotal,
+      },
+      recommendedChoice: 'FAST',
+      timeDifferenceMinutes: 5,
+      adviceMessage: 'Wait for 08:50 Karjat Fast from PF 11. Arrives in Kalyan 5 mins earlier than the Slow train.',
+    };
+  }
+
+  // Graceful fallback for unmonitored / out-of-scope corridor
   return {
-    destination: 'Kalyan',
+    destination: destination || 'Unknown',
     fastTrain: {
-      trainNumber: '97105',
-      platform: 11,
-      leavesInMinutes: fastLeavesIn,
-      travelMinutes: fastTravel,
-      totalTripMinutes: fastTotal,
+      trainNumber: 'N/A',
+      platform: 3,
+      leavesInMinutes: 0,
+      travelMinutes: 0,
+      totalTripMinutes: 0,
     },
     slowTrain: {
-      trainNumber: '97103',
-      platform: 9,
-      leavesInMinutes: slowLeavesIn,
-      travelMinutes: slowTravel,
-      totalTripMinutes: slowTotal,
+      trainNumber: 'N/A',
+      platform: 2,
+      leavesInMinutes: 0,
+      travelMinutes: 0,
+      totalTripMinutes: 0,
     },
     recommendedChoice: 'FAST',
-    timeDifferenceMinutes: 5,
-    adviceMessage: 'Wait for 08:50 Karjat Fast from PF 11. Arrives in Kalyan 5 mins earlier than the Slow train.',
+    timeDifferenceMinutes: 0,
+    adviceMessage: `Corridor for "${destination}" is not yet monitored. Optimization currently active for Borivali, Virar, Thane, and Kalyan corridors.`,
   };
 }
