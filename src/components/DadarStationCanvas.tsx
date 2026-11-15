@@ -14,6 +14,53 @@ interface DadarStationCanvasProps {
   trains?: ActiveTrainState[];
   selectedPlatform?: number | null;
   onSelectPlatform?: (platformNumber: number) => void;
+  selectedCoachPosition?: number | null;
+}
+
+/**
+ * Creates 2D canvas texture for floating 3D coach locator badge
+ */
+function createCoachPinTexture(
+  coachTitle: string,
+  classTitle: string,
+  colorHex: string = '#ec4899'
+): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 160;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+
+  // Background rounded pill
+  ctx.fillStyle = '#0f172a';
+  ctx.beginPath();
+  ctx.roundRect(8, 8, 496, 144, 28);
+  ctx.fill();
+
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = colorHex;
+  ctx.stroke();
+
+  // Pin circle icon
+  ctx.fillStyle = colorHex;
+  ctx.beginPath();
+  ctx.arc(60, 80, 24, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Coach text
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 44px system-ui, -apple-system, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(coachTitle, 105, 60);
+
+  ctx.fillStyle = colorHex;
+  ctx.font = 'bold 30px system-ui, -apple-system, sans-serif';
+  ctx.fillText(classTitle.toUpperCase(), 105, 105);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  return texture;
 }
 
 /**
@@ -101,6 +148,7 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
   trains = [],
   selectedPlatform,
   onSelectPlatform,
+  selectedCoachPosition,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const [activePreset, setActivePreset] = useState<'OVERVIEW' | 'WESTERN' | 'CENTRAL' | 'NORTH_VIEW'>(() => {
@@ -122,6 +170,7 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
   const platformSignsRef = useRef<Map<number, THREE.Mesh>>(new Map());
   const billboardSignsRef = useRef<THREE.Mesh[]>([]);
   const trainGroupsRef = useRef<Map<string, THREE.Group>>(new Map());
+  const coachPinRef = useRef<THREE.Group | null>(null);
 
   // Calculates exact X position for platforms and tracks
   const getPlatformX = useCallback((pfNum: number): number => {
@@ -611,6 +660,12 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
           const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
           bodyMesh.castShadow = true;
           bodyMesh.receiveShadow = true;
+          bodyMesh.userData = {
+            type: 'COACH',
+            trainId: train.id,
+            coachPosition: coach.position,
+            colorHex: coach.colorHex,
+          };
           coachGroup.add(bodyMesh);
 
           // Coach Class Livery Stripe
@@ -645,21 +700,95 @@ export const DadarStationCanvas: React.FC<DadarStationCanvasProps> = ({
     });
   }, [trains, getPlatformX]);
 
-  // 3. Highlight Selected Platform Gently Without Camera Interference
+  // 4. Synchronize Selected Coach Highlight & Floating 3D Beacon Pin
   useEffect(() => {
-    platformMeshesRef.current.forEach((mesh, pfNum) => {
-      const mat = mesh.material as THREE.MeshStandardMaterial;
-      if (selectedPlatform === pfNum) {
-        mat.color.set('#3b82f6'); // Vibrant selected blue
-        mat.emissive.set('#1d4ed8');
-        mat.emissiveIntensity = 0.4;
-      } else {
-        mat.color.set('#f8fafc'); // Clean concrete daylight
-        mat.emissive.set('#000000');
-        mat.emissiveIntensity = 0.0;
-      }
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    // Emissive highlight on the selected coach mesh
+    trains.forEach((train) => {
+      const trainGroup = trainGroupsRef.current.get(train.id);
+      if (!trainGroup) return;
+
+      const isSelectedPlatform = train.platformNumber === selectedPlatform;
+
+      trainGroup.children.forEach((coachGroup) => {
+        coachGroup.children.forEach((child) => {
+          if (child instanceof THREE.Mesh && child.userData && child.userData.type === 'COACH') {
+            const mat = child.material as THREE.MeshStandardMaterial;
+            if (isSelectedPlatform && child.userData.coachPosition === selectedCoachPosition) {
+              mat.emissive.set(child.userData.colorHex || '#3b82f6');
+              mat.emissiveIntensity = 0.85;
+            } else {
+              mat.emissive.set('#000000');
+              mat.emissiveIntensity = 0.0;
+            }
+          }
+        });
+      });
     });
-  }, [selectedPlatform]);
+
+    // 3D Floating Pin directly hovering above the selected coach
+    const activeTrain = trains.find((t) => t.platformNumber === selectedPlatform);
+
+    if (activeTrain && selectedCoachPosition && activeTrain.lifecycle !== 'CLEAR') {
+      const coachSpacing = 4.6;
+      const totalCoaches = activeTrain.coaches.length;
+      const startZ = -((totalCoaches * coachSpacing) / 2);
+      const coachIdx = activeTrain.coaches.findIndex((c) => c.position === selectedCoachPosition);
+
+      if (coachIdx !== -1) {
+        const coach = activeTrain.coaches[coachIdx];
+        const trackX = getPlatformX(activeTrain.platformNumber) + 2.6;
+        const coachZ = activeTrain.positionZ + (startZ + coachIdx * coachSpacing);
+
+        if (!coachPinRef.current) {
+          const pinGroup = new THREE.Group();
+
+          // Vertical glowing line
+          const lineGeo = new THREE.CylinderGeometry(0.06, 0.06, 3.2);
+          const lineMat = new THREE.MeshBasicMaterial({ color: coach.colorHex });
+          const lineMesh = new THREE.Mesh(lineGeo, lineMat);
+          lineMesh.position.y = 1.6;
+          pinGroup.add(lineMesh);
+
+          // Glowing Sphere tip
+          const sphereGeo = new THREE.SphereGeometry(0.24, 16, 16);
+          const sphereMat = new THREE.MeshBasicMaterial({ color: coach.colorHex });
+          const sphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
+          sphereMesh.position.y = 3.2;
+          pinGroup.add(sphereMesh);
+
+          // Floating Billboard Badge
+          const badgeGeo = new THREE.PlaneGeometry(4.0, 1.25);
+          const badgeTex = createCoachPinTexture(`Coach ${coach.position}`, coach.displayName, coach.colorHex);
+          const badgeMat = new THREE.MeshBasicMaterial({ map: badgeTex, side: THREE.FrontSide, transparent: true });
+          const badgeMesh = new THREE.Mesh(badgeGeo, badgeMat);
+          badgeMesh.position.y = 4.2;
+          badgeMesh.userData = { type: 'COACH_BADGE' };
+          pinGroup.add(badgeMesh);
+
+          scene.add(pinGroup);
+          coachPinRef.current = pinGroup;
+          billboardSignsRef.current.push(badgeMesh);
+        } else {
+          // Update texture on existing badge
+          const badgeMesh = coachPinRef.current.children.find((c) => c.userData?.type === 'COACH_BADGE') as THREE.Mesh;
+          if (badgeMesh) {
+            const badgeTex = createCoachPinTexture(`Coach ${coach.position}`, coach.displayName, coach.colorHex);
+            badgeMesh.material = new THREE.MeshBasicMaterial({ map: badgeTex, side: THREE.FrontSide, transparent: true });
+          }
+        }
+
+        coachPinRef.current.position.set(trackX, 1.8, coachZ);
+        coachPinRef.current.visible = true;
+      } else if (coachPinRef.current) {
+        coachPinRef.current.visible = false;
+      }
+    } else if (coachPinRef.current) {
+      coachPinRef.current.visible = false;
+    }
+  }, [selectedPlatform, selectedCoachPosition, trains, getPlatformX]);
 
   return (
     <div className="relative w-full h-full select-none overflow-hidden bg-slate-100 font-sans">

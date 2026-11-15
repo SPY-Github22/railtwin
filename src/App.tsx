@@ -1,11 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { DADAR_PLATFORMS } from './domain/station.ts';
-import { INITIAL_TRAIN_ROSTER, advanceTrainPhysics, ActiveTrainState } from './domain/trainRakeEngine.ts';
+import {
+  INITIAL_TRAIN_ROSTER,
+  advanceTrainPhysics,
+  ActiveTrainState,
+  calculateCoachPillarMapping,
+} from './domain/trainRakeEngine.ts';
 import { DadarStationCanvas } from './components/DadarStationCanvas.tsx';
-import { Train, Info } from 'lucide-react';
+import { Train, Info, Users } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [selectedPlatform, setSelectedPlatform] = useState<number | null>(3);
+  const [selectedCoachPosition, setSelectedCoachPosition] = useState<number | null>(2); // Default to Ladies Coach #2
   const [trains, setTrains] = useState<ActiveTrainState[]>(INITIAL_TRAIN_ROSTER);
 
   // Train Physics Simulation Loop with Tab Sleep Resynchronization
@@ -37,6 +43,15 @@ export const App: React.FC = () => {
 
   const activePlatformData = DADAR_PLATFORMS.find((p) => p.number === selectedPlatform);
   const activeTrain = trains.find((t) => t.platformNumber === selectedPlatform);
+  const selectedCoachMapping = activeTrain && selectedCoachPosition
+    ? calculateCoachPillarMapping(activeTrain, selectedCoachPosition)
+    : null;
+
+  const handleSelectPlatform = (pfNum: number) => {
+    setSelectedPlatform(pfNum);
+    // Auto-select Coach #2 (Ladies) or Coach #1 when switching platforms
+    setSelectedCoachPosition(2);
+  };
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-slate-100 font-sans text-slate-800">
@@ -45,7 +60,8 @@ export const App: React.FC = () => {
         <DadarStationCanvas
           trains={trains}
           selectedPlatform={selectedPlatform}
-          onSelectPlatform={setSelectedPlatform}
+          onSelectPlatform={handleSelectPlatform}
+          selectedCoachPosition={selectedCoachPosition}
         />
       </div>
 
@@ -62,26 +78,89 @@ export const App: React.FC = () => {
                 DADAR
               </span>
             </div>
-            <p className="text-[10px] text-slate-400 font-medium">14 Platforms · 3D Digital Twin</p>
+            <p className="text-[10px] text-slate-400 font-medium">14 Platforms · 3D Live Station Twin</p>
           </div>
         </div>
       </header>
 
-      {/* Clean, Uncluttered Bottom Platform Bar (Step 1 Foundation) */}
-      <div className="absolute bottom-6 inset-x-4 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:w-[580px] z-20 flex flex-col items-center space-y-2 pointer-events-auto">
+      {/* Clean, Uncluttered Bottom Controls (Step 2: Coach & Platform Locator) */}
+      <div className="absolute bottom-6 inset-x-4 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:w-[620px] z-20 flex flex-col items-center space-y-2 pointer-events-auto">
+        {/* Step 2: 1-Tap Coach & Pillar Formation Strip */}
+        {activeTrain && activeTrain.coaches && activeTrain.coaches.length > 0 && (
+          <div className="flex flex-col items-center space-y-1.5 w-full bg-white/95 p-2 rounded-2xl border border-slate-200/90 shadow-xl backdrop-blur animate-in fade-in duration-200">
+            {/* Coach formation horizontal scroll row */}
+            <div className="flex items-center space-x-1.5 overflow-x-auto max-w-full px-1 py-0.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 shrink-0 mr-1 flex items-center space-x-1">
+                <Users className="w-3 h-3 text-slate-400" />
+                <span>Coaches:</span>
+              </span>
+              {activeTrain.coaches.map((c) => {
+                const isSelected = selectedCoachPosition === c.position;
+                return (
+                  <button
+                    key={c.position}
+                    type="button"
+                    onClick={() => setSelectedCoachPosition(c.position)}
+                    style={{
+                      borderColor: isSelected ? c.colorHex : '#e2e8f0',
+                      backgroundColor: isSelected ? `${c.colorHex}15` : '#ffffff',
+                    }}
+                    className={`px-2.5 py-1 rounded-xl border text-xs font-bold shrink-0 transition flex items-center space-x-1.5 ${
+                      isSelected ? 'shadow-xs ring-2 ring-offset-1' : 'hover:bg-slate-50'
+                    }`}
+                  >
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: c.colorHex }}
+                    />
+                    <span className="text-slate-800">#{c.position}</span>
+                    <span className="text-[10px] text-slate-500 font-semibold uppercase">
+                      {c.coachCode}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Coach Pillar & Boarding Guidance Pill */}
+            {selectedCoachMapping && (
+              <div className="flex flex-col sm:flex-row sm:items-center text-xs text-slate-700 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200/80 w-full justify-between gap-1">
+                <div className="flex items-center space-x-2">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: selectedCoachMapping.colorHex }}
+                  />
+                  <span className="font-bold text-slate-900">
+                    Coach {selectedCoachMapping.coachPosition} ({selectedCoachMapping.displayName})
+                  </span>
+                  <span className="text-slate-400">·</span>
+                  <span className="font-medium text-slate-600">
+                    Stand near <strong className="text-blue-700 font-bold">Pillar {selectedCoachMapping.targetPillar}</strong> ({selectedCoachMapping.fobProximity})
+                  </span>
+                </div>
+                <span className="text-[11px] text-slate-500">
+                  {selectedCoachMapping.walkingAdvice}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Selected Platform Quick Status Pill */}
         {activePlatformData && (
-          <div className="flex items-center space-x-2.5 px-4 py-2 bg-white/95 rounded-2xl border border-slate-200 shadow-md backdrop-blur text-xs font-semibold text-slate-800 animate-in fade-in duration-150">
-            <span
-              className={`px-2 py-0.5 rounded-lg text-white font-extrabold text-[11px] ${
-                activePlatformData.line === 'WESTERN' ? 'bg-blue-600' : 'bg-red-600'
-              }`}
-            >
-              PF {activePlatformData.number}
-            </span>
-            <span className="text-slate-600 font-medium">
-              Platform {activePlatformData.number} ({activePlatformData.line === 'WESTERN' ? 'Western Line' : 'Central Line'} · {activePlatformData.side} Concourse)
-            </span>
+          <div className="flex items-center space-x-2.5 px-4 py-2 bg-white/95 rounded-2xl border border-slate-200 shadow-md backdrop-blur text-xs font-semibold text-slate-800 animate-in fade-in duration-150 w-full justify-between">
+            <div className="flex items-center space-x-2">
+              <span
+                className={`px-2 py-0.5 rounded-lg text-white font-extrabold text-[11px] ${
+                  activePlatformData.line === 'WESTERN' ? 'bg-blue-600' : 'bg-red-600'
+                }`}
+              >
+                PF {activePlatformData.number}
+              </span>
+              <span className="text-slate-600 font-medium">
+                Platform {activePlatformData.number} ({activePlatformData.line === 'WESTERN' ? 'Western Line' : 'Central Line'})
+              </span>
+            </div>
             {activeTrain ? (
               <span className="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200">
                 Train #{activeTrain.trainNumber} ({activeTrain.destination})
@@ -101,7 +180,7 @@ export const App: React.FC = () => {
               <button
                 key={pf.id}
                 type="button"
-                onClick={() => setSelectedPlatform(pf.number)}
+                onClick={() => handleSelectPlatform(pf.number)}
                 className={`w-8 h-8 rounded-xl font-bold text-xs flex items-center justify-center transition active:scale-95 ${
                   isSelected
                     ? isWestern
@@ -120,9 +199,10 @@ export const App: React.FC = () => {
         {/* Subtle Guidance Hint */}
         <div className="flex items-center space-x-1.5 text-[11px] text-slate-500 bg-white/80 px-3 py-1 rounded-full border border-slate-200/80 shadow-xs backdrop-blur">
           <Info className="w-3 h-3 text-blue-500" />
-          <span>Click any platform number to highlight it in 3D. Drag to rotate and inspect freely.</span>
+          <span>Tap a coach to see where it stops along the platform in 3D. Free drag/rotate anytime.</span>
         </div>
       </div>
     </div>
   );
 };
+
