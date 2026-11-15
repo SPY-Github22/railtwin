@@ -31,11 +31,24 @@ export const App: React.FC = () => {
   // Interchange routing state
   const [sourcePf, setSourcePf] = useState<number>(3);
   const [targetPf, setTargetPf] = useState<number>(10);
-  const [activeTab, setActiveTab] = useState<CommuterTab>('COACH');
+  const [activeTab, setActiveTab] = useState<CommuterTab>(() => {
+    if (typeof window !== 'undefined') {
+      const p = new URLSearchParams(window.location.search).get('tab');
+      if (p === 'INTERCHANGE' || p === 'TIMETABLE' || p === 'BRIDGES' || p === 'COACH') {
+        return p;
+      }
+    }
+    return 'COACH';
+  });
   const [isDrawerCollapsed, setIsDrawerCollapsed] = useState<boolean>(false);
 
   // Crowdsourced Chokepoint Reporting State
-  const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return new URLSearchParams(window.location.search).get('report') === 'true';
+    }
+    return false;
+  });
   const [crowdReports, setCrowdReports] = useState<CrowdReport[]>([
     {
       id: 'rep-init-1',
@@ -60,6 +73,11 @@ export const App: React.FC = () => {
 
   // Platform Flip active alert
   const [flipAlert, setFlipAlert] = useState<PlatformFlipEvent | null>(() => {
+    if (typeof window !== 'undefined') {
+      if (new URLSearchParams(window.location.search).get('noflip') === 'true') {
+        return null;
+      }
+    }
     const detected = detectPlatformFlipEvents();
     return detected.length > 0 ? detected[0] : null;
   });
@@ -110,6 +128,7 @@ export const App: React.FC = () => {
     setSelectedPlatform(newPlatform);
     setActiveTab('INTERCHANGE');
     setIsDrawerCollapsed(false);
+    setFlipAlert(null); // Clear emergency banner to reveal 3D tube path
   };
 
   const handleSubmitReport = (reportData: Omit<CrowdReport, 'id' | 'timestampMs'>) => {
